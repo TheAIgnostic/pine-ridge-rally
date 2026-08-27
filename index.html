@@ -585,7 +585,7 @@ function makeCar(idx, gridSlot){
     finished:false, finishTime:0,
     isPlayer: idx===0,
     // AI personality
-    skill: idx===0?1: [1.0,0.98,0.955,0.935,0.91][gridSlot]* (1+ (rnd()*0.02-0.01)),
+    skill: idx===0?1: SURF.aiSkills[gridSlot]* (1+ (rnd()*0.02-0.01)),
     aiOff:(rnd()*2-1)*10,
     slip:0, offroad:false, engine:0, wet:0, mudTimer:0
   };
@@ -696,18 +696,36 @@ const audio={
 };
 
 // ---------- physics ----------
-// Surface note: the looser pre-tune (commit d8ba538) drove like SNOW/ICE and is
-// earmarked for a winter stage — gripGravel 4.5, gripHB 1.1, steer shed
-// 0.45@300, power oversteer 0.78, brake grip 0.62, slide feedback 0.35,
-// aiLatAcc 330, AI skills [0.99,0.958,0.928,0.9,0.872].
+// Handling lives in per-surface presets; the car itself (engine, brakes,
+// chassis) lives in P. A future stage picks its surface by swapping SURF.
+const SURFACES={
+  gravel:{
+    grip:5.2, gripHB:1.2,                // lateral grip; grip with handbrake pulled
+    steerShed:0.38, steerShedRef:320,    // turning at speed sheds grip
+    powerOS:0.82,                        // power oversteer multiplier
+    brakeGrip:0.68,                      // braking mid-corner unsettles the car
+    slideFeedback:0.28, gripFloor:0.45,  // a slide erodes remaining grip (held drifts)
+    aiLatAcc:365,                        // how hard the AI dares to corner
+    aiSkills:[1.0,0.98,0.955,0.935,0.91] // per-grid-slot pace
+  },
+  snow:{ // the loose pre-tune Tom earmarked for a winter stage (commit d8ba538)
+    grip:4.5, gripHB:1.1,
+    steerShed:0.45, steerShedRef:300,
+    powerOS:0.78,
+    brakeGrip:0.62,
+    slideFeedback:0.35, gripFloor:0.45,
+    aiLatAcc:330,
+    aiSkills:[0.99,0.958,0.928,0.9,0.872]
+  }
+};
+let SURF=SURFACES.gravel;
 const P={
   accel:600, revAccel:260, brakeF:980,
   dragK:0.0019, roll:36,
-  gripGravel:5.2, gripHB:1.2, gripGrass:3.2,
+  gripGrass:3.2,
   yawMax:3.05, yawSpeedRef:150,
   maxRev:-170,
-  grassDragMul:2.6, grassAccelMul:0.55,
-  aiLatAcc:365
+  grassDragMul:2.6, grassAccelMul:0.55
 };
 function stepCar(c,dt){
   // steer FIRST: the nose rotates but momentum stays put in the world, so
@@ -748,16 +766,16 @@ function stepCar(c,dt){
   vf -= (P.dragK/rb*vf*Math.abs(vf) + Math.sign(vf)*Math.min(Math.abs(vf),P.roll*dragMul))*dt*(c.offroad?1.6:1);
 
   // lateral grip (this is the rally feel: gravel lets the tail walk; wet gravel barely holds)
-  let grip = c.offroad?P.gripGrass:P.gripGravel*(1-0.55*wet);
-  if(c.hb) grip=P.gripHB*(1-0.35*wet);
+  let grip = c.offroad?P.gripGrass:SURF.grip*(1-0.55*wet);
+  if(c.hb) grip=SURF.gripHB*(1-0.35*wet);
   // turning at speed sheds grip — corners are where the car dances
-  grip *= 1 - 0.38*Math.abs(c.steer)*clamp(Math.abs(vf)/320,0,1);
-  if(c.throttle>0.6 && Math.abs(c.steer)>0.35) grip*=0.82;  // power oversteer
-  if(c.brake>0 && Math.abs(vf)>120) grip*=0.68;   // pendulum: braking unsettles the car
+  grip *= 1 - SURF.steerShed*Math.abs(c.steer)*clamp(Math.abs(vf)/SURF.steerShedRef,0,1);
+  if(c.throttle>0.6 && Math.abs(c.steer)>0.35) grip*=SURF.powerOS;  // power oversteer
+  if(c.brake>0 && Math.abs(vf)>120) grip*=SURF.brakeGrip; // pendulum: braking unsettles the car
   // a sliding car keeps sliding: sideways speed erodes what grip is left,
   // so a provoked drift holds its angle instead of snapping straight
-  grip *= 1 - 0.28*clamp(c.slip/140,0,1);
-  grip = Math.max(grip,0.45);
+  grip *= 1 - SURF.slideFeedback*clamp(c.slip/140,0,1);
+  grip = Math.max(grip,SURF.gripFloor);
   vl *= Math.exp(-grip*dt);
   c.slip=Math.abs(vl);
 
@@ -777,10 +795,10 @@ function stepCar(c,dt){
 
   // marks + dust
   if(state.mode==="race"||state.mode==="countdown"){
-    if(c.slip>62 || (c.hb&&Math.abs(vf)>60)){
+    if(c.slip>85 || (c.hb&&Math.abs(vf)>60)){
       const bx=c.x-Math.cos(c.ang)*14, by=c.y-Math.sin(c.ang)*14;
       const nx=-Math.sin(c.ang)*7.5, ny=Math.cos(c.ang)*7.5;
-      skidCtx.strokeStyle=wet>0.3?"rgba(34,25,15,.6)":"rgba(52,40,26,.5)"; skidCtx.lineWidth=4;
+      skidCtx.strokeStyle=wet>0.3?"rgba(34,25,15,.3)":"rgba(52,40,26,.22)"; skidCtx.lineWidth=3.5;
       skidCtx.beginPath(); skidCtx.moveTo(bx+nx,by+ny); skidCtx.lineTo(bx+nx-c.vx*dt*1.4,by+ny-c.vy*dt*1.4); skidCtx.stroke();
       skidCtx.beginPath(); skidCtx.moveTo(bx-nx,by-ny); skidCtx.lineTo(bx-nx-c.vx*dt*1.4,by-ny-c.vy*dt*1.4); skidCtx.stroke();
     }
@@ -815,20 +833,50 @@ function collide(){
 
 // ---------- AI ----------
 function driveAI(c,dt){
-  const look = clamp(Math.abs(c.vf||0)*0.32,60,240);
+  // short lookahead: a long one draws a chord across the inside of tight bends
+  // and the car faithfully drives through the grass it points at
+  const look = clamp(Math.abs(c.vf||0)*0.26,50,170);
   // find sample 'look' ahead
   let ti=c.near, remaining=look;
   while(remaining>0){ const nx=(ti+1)%N; remaining-=DIST[nx===0?N:nx]-DIST[ti] || (TRACK_LEN-DIST[ti]); ti=nx; }
-  const tp=samplePos(ti), ta=TANG[ti];
-  const tx=tp[0]-Math.sin(ta)*c.aiOff, ty=tp[1]+Math.cos(ta)*c.aiOff;
+  let tx,ty;
+  if(c.offroad){
+    // off the road: forget the racing line, aim straight back at the track
+    const q=samplePos(c.near+12);
+    tx=q[0]; ty=q[1];
+  } else {
+    const tp=samplePos(ti), ta=TANG[ti];
+    tx=tp[0]-Math.sin(ta)*c.aiOff; ty=tp[1]+Math.cos(ta)*c.aiOff;
+  }
   const want=Math.atan2(ty-c.y,tx-c.x);
-  c.steer=clamp(angDiff(c.ang,want)*2.2,-1,1);
+  // Aim the VELOCITY, not the nose. On gravel the car travels sideways of its
+  // heading, so pointing the nose at the apex walks the car wide on every exit.
+  // Outer loop: pick the slip angle that bends the path toward the target.
+  // Inner loop: steer the nose to hold that slip angle (counter-steer falls out
+  // of this naturally when the tail is out).
+  const spd=Math.hypot(c.vx,c.vy);
+  if(spd>60 && (c.vf||0)>0){
+    const va=Math.atan2(c.vy,c.vx);
+    let errV=angDiff(va,want);                // where we go vs where we should go
+    // edge guard: drifting toward the shoulder bends the aim back to center
+    if(!c.offroad){
+      const s0=SAMPLES[c.near], tn=TANG[c.near];
+      const lat=-(c.x-s0[0])*Math.sin(tn)+(c.y-s0[1])*Math.cos(tn);
+      const room=TRACK_W/2-16;
+      if(Math.abs(lat)>room) errV += angDiff(va,TANG[(c.near+8)%N])*0.8 - Math.sign(lat)*0.25*( (Math.abs(lat)-room)/20 );
+    }
+    const slipAng=angDiff(va,c.ang);          // how far the nose leads the path
+    const desired=clamp(errV*1.35,-0.55,0.55);
+    c.steer=clamp((desired-slipAng)*2.8,-1,1);
+  } else {
+    c.steer=clamp(angDiff(c.ang,want)*2.2,-1,1);
+  }
   // target speed from curvature ahead (min over the braking window)
   let minV=Infinity, si=c.near;
   const win=clamp(Math.abs(c.vf||0)*0.7,120,420);
   let acc=0;
   while(acc<win){
-    const k=CURV[si]; const v=Math.sqrt(P.aiLatAcc/Math.max(k,0.0004));
+    const k=CURV[si]; const v=Math.sqrt(SURF.aiLatAcc/Math.max(k,0.0004));
     // weight far corners less
     minV=Math.min(minV, v + acc*0.25);
     const nx2=(si+1)%N; acc += (nx2===0? TRACK_LEN-DIST[si] : DIST[nx2]-DIST[si]); si=nx2;
@@ -846,12 +894,9 @@ function driveAI(c,dt){
   if(vf<target-8){ c.throttle=1; c.brake=0; }
   else if(vf>target+22){ c.throttle=0; c.brake=1; }
   else { c.throttle=0.4; c.brake=0; }
-  // slide management: lift, and counter-steer to pull the nose back toward travel
-  if(c.slip>70){
-    c.throttle=Math.min(c.throttle,0.45); c.brake=0;
-    const va=Math.atan2(c.vy,c.vx);
-    if(Math.hypot(c.vx,c.vy)>120) c.steer=clamp(angDiff(c.ang,va)*1.6,-1,1);
-  }
+  // slide management: lift while the tail is way out (steering is already
+  // handled by the velocity-aim controller, which counter-steers on its own)
+  if(c.slip>95){ c.throttle=Math.min(c.throttle,0.45); c.brake=0; }
   c.hb = CURV[c.near]>0.0075 && vf>260 && c.slip<70;   // yank it in hairpins, but not mid-slide
   // stuck recovery
   if(Math.abs(vf)<20 && state.t>4 && !c.finished){
@@ -875,39 +920,34 @@ function fmt(t){
 }
 function playerLap(c){ return clamp(Math.floor(c.progress/TRACK_LEN)+1,1,LAPS); }
 
-function update(dt){
-  if(state.mode==="menu"||state.mode==="results") return;
+// --- per-frame systems, orchestrated by update() ---
 
-  if(state.mode==="countdown"){
-    const prev=Math.ceil(state.countdown);
-    state.countdown-=dt;
-    const now=Math.ceil(state.countdown);
-    if(now!==prev && now>0) toast(String(now),800);
-    if(state.countdown<=0){ state.mode="race"; toast("GO!",900,true); }
-    else if(prev===4) toast("3",800);
-  }
-  if(state.mode==="race") state.t+=dt;
+function updateCountdown(dt){
+  const prev=Math.ceil(state.countdown);
+  state.countdown-=dt;
+  const now=Math.ceil(state.countdown);
+  if(now!==prev && now>0) toast(String(now),800);
+  if(state.countdown<=0){ state.mode="race"; toast("GO!",900,true); }
+  else if(prev===4) toast("3",800);
+}
 
-  const racing=state.mode==="race";
-  // player input
-  const p=state.player;
-  if(window.AUTOPILOT && racing && !p.finished){
-    driveAI(p,dt);           // debug: self-driving player for testing
-  } else if(!p.finished){
-    const kSteer=(keys.ArrowLeft||keys.KeyA||touchState.left?-1:0)+(keys.ArrowRight||keys.KeyD||touchState.right?1:0);
-    p.steer = clamp(kSteer + pad.steer, -1, 1);
-    p.throttle = racing ? Math.max((keys.ArrowUp||keys.KeyW||touchState.gas)?1:0, pad.throttle) : 0;
-    p.brake = racing ? Math.max((keys.ArrowDown||keys.KeyS||touchState.brake)?1:0, pad.brake) : 0;
-    p.hb = !!(keys.Space||touchState.hb||pad.hb);
-  } else { p.throttle=0; p.brake=0.4; p.hb=false; }
+// keyboard, touch, and gamepad merged: strongest input wins
+function readPlayerInput(p,racing){
+  const kSteer=(keys.ArrowLeft||keys.KeyA||touchState.left?-1:0)+(keys.ArrowRight||keys.KeyD||touchState.right?1:0);
+  p.steer = clamp(kSteer + pad.steer, -1, 1);
+  p.throttle = racing ? Math.max((keys.ArrowUp||keys.KeyW||touchState.gas)?1:0, pad.throttle) : 0;
+  p.brake = racing ? Math.max((keys.ArrowDown||keys.KeyS||touchState.brake)?1:0, pad.brake) : 0;
+  p.hb = !!(keys.Space||touchState.hb||pad.hb);
   // a mud-caked windscreen makes the wheel twitchy
-  if(!p.finished && mudFx.level>0.05 && !window.AUTOPILOT)
+  if(mudFx.level>0.05)
     p.steer=clamp(p.steer+(Math.random()-0.5)*0.35*mudFx.level,-1,1);
+}
 
-  // rubber band factors (after Melder, Game AI Pro ch.42): continuous with the
-  // distance to the player, dead zone up close so wheel-to-wheel racing is honest,
-  // clamped. Trailing AI gain real pace — much more while the player holds P1 —
-  // and AI ahead of the player shed a little.
+// rubber band factors (after Melder, Game AI Pro ch.42): continuous with the
+// distance to the player, dead zone up close so wheel-to-wheel racing is honest,
+// clamped. Trailing AI gain real pace — much more while the player holds P1 —
+// and AI ahead of the player shed a little. stepCar turns c.rb into engine/top speed.
+function applyRubberBand(p,racing){
   const playerLeads = rankOf(p)===1;
   for(const c of state.cars){
     if(c.isPlayer || c.finished || p.finished || !racing){ c.rb=1; continue; }
@@ -917,7 +957,10 @@ function update(dt){
     else if(gap<-DEAD) c.rb = 1 - Math.min((-gap-DEAD)/RANGE,1)*0.08;
     else c.rb = 1;
   }
+}
 
+// drive every car one step; detect finishes
+function stepField(dt,racing){
   for(const c of state.cars){
     if(!c.isPlayer){
       if(racing && !c.finished) driveAI(c,dt);
@@ -927,59 +970,73 @@ function update(dt){
     if(racing && !c.finished && c.progress>=LAPS*TRACK_LEN){
       c.finished=true; c.finishTime=state.t;
       state.finishOrder.push(c);
-      if(c.isPlayer){
-        setTimeout(showResults,1400);
-        state.playerDone=true;
-      } else if(!state.playerDone){
-        // nothing — HUD position covers it
-      }
+      if(c.isPlayer){ setTimeout(showResults,1400); state.playerDone=true; }
     }
   }
   collide();
+}
 
-  // mud: a car on wet ground trails a spray plume — sit in it and you get caked,
-  // offset your line and you stay clean; chasers in YOUR plume suffer the same
-  if(racing && !p.finished){
-    let spray=0;
-    for(const c of state.cars){
-      if(c.isPlayer) continue;
-      if(c.wet>0.2 && inPlume(c,p)) spray++;
-      if(!c.finished && (p.wet||0)>0.25 && inPlume(p,c)) c.mudTimer=2.5;
-    }
-    if(spray>0) mudFx.level=Math.min(1, mudFx.level+dt*0.22*spray);
-    else if((p.wet||0)<0.15) mudFx.level=Math.max(0, mudFx.level-dt*0.22);  // dry ground: clears
-    else mudFx.level=Math.max(0, mudFx.level-dt*0.05);                       // still wet: barely
-    mudFx.sync();
+// mud: a car on wet ground trails a spray plume — sit in it and you get caked,
+// offset your line and you stay clean; chasers in YOUR plume suffer the same
+function updateMudSpray(p,dt){
+  let spray=0;
+  for(const c of state.cars){
+    if(c.isPlayer) continue;
+    if(c.wet>0.2 && inPlume(c,p)) spray++;
+    if(!c.finished && (p.wet||0)>0.25 && inPlume(p,c)) c.mudTimer=2.5;
   }
+  if(spray>0) mudFx.level=Math.min(1, mudFx.level+dt*0.22*spray);
+  else if((p.wet||0)<0.15) mudFx.level=Math.max(0, mudFx.level-dt*0.22);  // dry ground: clears
+  else mudFx.level=Math.max(0, mudFx.level-dt*0.05);                       // still wet: barely
+  mudFx.sync();
+}
 
-  // lap toast for player
+function updateLapToast(p){
   const lapNow=playerLap(p);
   if(state.lastLap===undefined) state.lastLap=lapNow;
   if(lapNow!==state.lastLap && !p.finished){
     state.lastLap=lapNow;
-    if(lapNow===LAPS) toast("FINAL LAP",1200);
-    else toast("LAP "+lapNow,1000);
+    toast(lapNow===LAPS?"FINAL LAP":"LAP "+lapNow, lapNow===LAPS?1200:1000);
   }
+}
 
-  // particles
+function updateParticles(dt){
   for(let i=state.particles.length-1;i>=0;i--){
     const q=state.particles[i];
     q.life-=dt; if(q.life<=0){ state.particles.splice(i,1); continue; }
     q.x+=q.vx*dt; q.y+=q.vy*dt; q.r+=14*dt;
   }
+}
 
-  // camera: follow with velocity lookahead
+// follow with velocity lookahead, then keep the view inside the forest
+function updateCamera(p,dt){
   const lead=0.42;
-  const cx=p.x+p.vx*lead, cy=p.y+p.vy*lead;
   const k=1-Math.exp(-4.2*dt);
-  state.camX=lerp(state.camX,cx,k);
-  state.camY=lerp(state.camY,cy,k);
-  // keep the view inside the forest (render() computes the same scale)
+  state.camX=lerp(state.camX,p.x+p.vx*lead,k);
+  state.camY=lerp(state.camY,p.y+p.vy*lead,k);
   const sc=camScale();
   const hw=VW*DPR/sc/2, hh=VH*DPR/sc/2;
   if(hw*2<W_WORLD) state.camX=clamp(state.camX,hw-40,W_WORLD-hw+40);
   if(hh*2<H_WORLD) state.camY=clamp(state.camY,hh-40,H_WORLD-hh+40);
+}
 
+function update(dt){
+  if(state.mode==="menu"||state.mode==="results") return;
+  if(state.mode==="countdown") updateCountdown(dt);
+  const racing=state.mode==="race";
+  if(racing) state.t+=dt;
+
+  const p=state.player;
+  if(window.AUTOPILOT && racing && !p.finished) driveAI(p,dt); // debug self-drive
+  else if(!p.finished) readPlayerInput(p,racing);
+  else { p.throttle=0; p.brake=0.4; p.hb=false; }
+
+  applyRubberBand(p,racing);
+  stepField(dt,racing);
+  if(racing && !p.finished) updateMudSpray(p,dt);
+  updateLapToast(p);
+  updateParticles(dt);
+  updateCamera(p,dt);
   audio.update(Math.abs(p.vf||0),p.throttle);
 }
 
