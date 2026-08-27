@@ -1,0 +1,1141 @@
+<meta charset="utf-8">
+<title>Pine Ridge Rally</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,700;1,600;1,700&family=Saira+Condensed:wght@500;600;700&display=swap">
+<style>
+  :root{
+    --chrome:#0d1117;
+    --panel:rgba(8,12,16,.72);
+    --panel-line:rgba(255,255,255,.14);
+    --ink:#f2f4f6;
+    --ink-dim:#9aa6b0;
+    --audi-yellow:#f7c81e;
+    --hb-red:#d5322a;
+    --go-green:#7ad04a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--chrome);
+    color:var(--ink);
+    font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif;
+    overflow:hidden;
+  }
+  #wrap{position:fixed;inset:0}
+  canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;background:#66693a}
+
+  /* ---------- HUD ---------- */
+  .hud{position:absolute;top:14px;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:0 16px;pointer-events:none;z-index:5}
+  .hud-box{
+    background:var(--panel);
+    border:1px solid var(--panel-line);
+    border-radius:6px;
+    padding:6px 14px 7px;
+    font-family:"Chakra Petch",monospace;
+    font-style:italic;
+    font-weight:700;
+    text-shadow:0 2px 4px rgba(0,0,0,.5);
+    backdrop-filter:blur(3px);
+  }
+  .hud-box .lbl{font-size:12px;letter-spacing:.14em;color:var(--ink-dim);font-style:italic;font-weight:600}
+  .hud-box .val{font-size:26px;line-height:1.05;letter-spacing:.04em;font-variant-numeric:tabular-nums}
+  #hud-time .val{font-size:30px}
+  #hud-speed{min-width:120px;text-align:right}
+  #hud-speed .bar{height:5px;margin-top:5px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden}
+  #hud-speed .bar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#4fd1c5,var(--audi-yellow));border-radius:3px}
+  #hud-pos .val b{color:var(--audi-yellow)}
+  #hud-lap{margin-top:8px}
+  .hud-col{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+
+  #minimap{position:absolute;left:16px;bottom:16px;z-index:5;background:var(--panel);border:1px solid var(--panel-line);border-radius:8px;pointer-events:none}
+
+  #toast{
+    position:absolute;top:22%;left:0;right:0;text-align:center;z-index:6;pointer-events:none;
+    font-family:"Chakra Petch",monospace;font-style:italic;font-weight:700;
+    font-size:clamp(40px,9vw,96px);color:var(--audi-yellow);
+    text-shadow:0 4px 0 rgba(0,0,0,.45),0 10px 30px rgba(0,0,0,.5);
+    opacity:0;transform:scale(.8);transition:opacity .15s,transform .15s;
+    letter-spacing:.05em;
+  }
+  #toast.show{opacity:1;transform:scale(1)}
+  #toast.green{color:var(--go-green)}
+
+  /* ---------- Screens ---------- */
+  .screen{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(6,9,12,.66);backdrop-filter:blur(4px)}
+  .screen.hidden{display:none}
+  .card{
+    width:min(560px,92vw);
+    background:#11161c;
+    border:1px solid var(--panel-line);
+    border-top:4px solid var(--audi-yellow);
+    border-radius:10px;
+    padding:30px 34px 28px;
+    box-shadow:0 30px 80px rgba(0,0,0,.55);
+  }
+  .eyebrow{font-family:"Chakra Petch",monospace;font-style:italic;font-weight:600;font-size:13px;letter-spacing:.22em;color:var(--hb-red);text-transform:uppercase}
+  h1{font-family:"Chakra Petch",monospace;font-style:italic;font-weight:700;font-size:clamp(34px,6vw,48px);letter-spacing:.02em;line-height:1;margin:6px 0 2px;text-wrap:balance}
+  h1 span{color:var(--audi-yellow)}
+  .sub{color:var(--ink-dim);font-size:17px;margin-bottom:18px}
+  #carPreview{display:block;margin:4px auto 16px;image-rendering:auto}
+  .controls{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:16px;margin:0 0 22px}
+  .controls kbd{
+    font-family:"Chakra Petch",monospace;font-weight:700;font-size:13px;
+    background:#1b232c;border:1px solid #303c48;border-bottom-width:3px;border-radius:5px;
+    padding:2px 9px;color:var(--audi-yellow);white-space:nowrap;justify-self:start;
+  }
+  .controls div{color:var(--ink-dim)}
+  .btn{
+    display:block;width:100%;
+    font-family:"Chakra Petch",monospace;font-style:italic;font-weight:700;font-size:22px;letter-spacing:.12em;
+    color:#141414;background:var(--audi-yellow);
+    border:none;border-radius:7px;padding:13px 0 14px;cursor:pointer;
+    box-shadow:0 4px 0 #a8860b;
+    transition:transform .07s, box-shadow .07s;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn:active{transform:translateY(2px);box-shadow:0 1px 0 #a8860b}
+  .btn:focus-visible{outline:3px solid #fff;outline-offset:2px}
+  .btn.secondary{background:#242e38;color:var(--ink);box-shadow:0 4px 0 #10151b;margin-top:10px}
+
+  table.results{width:100%;border-collapse:collapse;margin:14px 0 20px;font-variant-numeric:tabular-nums}
+  table.results td,table.results th{padding:7px 8px;text-align:left;font-size:17px;border-bottom:1px solid rgba(255,255,255,.08)}
+  table.results th{font-family:"Chakra Petch",monospace;font-style:italic;font-size:12px;letter-spacing:.15em;color:var(--ink-dim);text-transform:uppercase}
+  table.results tr.you td{color:var(--audi-yellow);font-weight:700}
+  table.results td.pos{font-family:"Chakra Petch",monospace;font-style:italic;font-weight:700;width:36px}
+  table.results td.time{text-align:right;font-family:"Chakra Petch",monospace}
+  .swatch{display:inline-block;width:14px;height:10px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+
+  /* ---------- Touch controls ---------- */
+  #touch{position:absolute;inset:0;z-index:4;display:none;pointer-events:none}
+  body.touch #touch{display:block}
+  .tbtn{
+    position:absolute;bottom:26px;width:74px;height:74px;border-radius:50%;
+    background:rgba(10,14,18,.5);border:2px solid rgba(255,255,255,.25);
+    color:#fff;font-size:26px;pointer-events:auto;
+    display:flex;align-items:center;justify-content:center;
+    font-family:"Chakra Petch",monospace;font-weight:700;
+    -webkit-user-select:none;user-select:none;touch-action:none;
+  }
+  .tbtn:active{background:rgba(247,200,30,.35)}
+  #t-left{left:22px}#t-right{left:112px}
+  #t-brake{right:112px}#t-gas{right:22px;background:rgba(247,200,30,.28)}
+  #t-hb{right:67px;bottom:116px;width:60px;height:60px;font-size:15px}
+</style>
+
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <canvas id="mud" style="position:absolute;inset:0;pointer-events:none;z-index:3;opacity:0;transition:opacity .3s linear"></canvas>
+
+  <div class="hud">
+    <div class="hud-col">
+      <div class="hud-box" id="hud-pos"><span class="lbl">POS</span><div class="val"><b id="posNow">6</b>&hairsp;/&hairsp;6</div></div>
+      <div class="hud-box" id="hud-lap"><span class="lbl">LAP</span><div class="val"><span id="lapNow">1</span>&hairsp;/&hairsp;3</div></div>
+    </div>
+    <div class="hud-box" id="hud-time"><div class="val" id="raceTime">0:00.000</div></div>
+    <div class="hud-box" id="hud-speed"><div class="val" id="speedVal">000</div><div class="bar"><i id="speedBar"></i></div></div>
+  </div>
+
+  <canvas id="minimap" width="150" height="118"></canvas>
+  <div id="toast"></div>
+
+  <div id="touch">
+    <div class="tbtn" id="t-left">&#9664;</div>
+    <div class="tbtn" id="t-right">&#9654;</div>
+    <div class="tbtn" id="t-hb">HB</div>
+    <div class="tbtn" id="t-brake">&#9660;</div>
+    <div class="tbtn" id="t-gas">&#9650;</div>
+  </div>
+
+  <div class="screen" id="startScreen">
+    <div class="card">
+      <div class="eyebrow">Special Stage 01 &middot; Gravel &middot; 3 Laps</div>
+      <h1>PINE RIDGE <span>RALLY</span></h1>
+      <p class="sub">Six cars, one forest stage. You drive the Audi Sport quattro S1. The blue-marked corners are wet &mdash; slick under the tires, and sitting in the spray plume of the car ahead throws mud across your windscreen until the road dries out. Offset your line to dodge the plume.</p>
+      <canvas id="carPreview" width="260" height="130"></canvas>
+      <div class="controls">
+        <kbd>&uarr; / W</kbd><div>Throttle</div>
+        <kbd>&darr; / S</kbd><div>Brake / reverse</div>
+        <kbd>&larr;&rarr; / A D</kbd><div>Steer</div>
+        <kbd>SPACE</kbd><div>Handbrake &mdash; flick it for hairpins</div>
+        <kbd>M</kbd><div>Engine sound on / off</div>
+        <kbd>R</kbd><div>Restart race</div>
+        <kbd>&#127918; STICK + RT/LT</kbd><div>Controller: steer, throttle, brake &middot; A gas &middot; X handbrake &middot; Start confirms</div>
+      </div>
+      <button class="btn" id="startBtn">START ENGINE</button>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="endScreen">
+    <div class="card">
+      <div class="eyebrow" id="endEyebrow">Stage complete</div>
+      <h1 id="endTitle">P1 <span>FINISH</span></h1>
+      <table class="results" id="resultsTable"></table>
+      <button class="btn" id="againBtn">RACE AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* =========================================================
+   PINE RIDGE RALLY — isometric-style top-down rally MVP
+   ========================================================= */
+
+// ---------- helpers ----------
+const TAU = Math.PI * 2;
+const clamp = (v,a,b)=> v<a?a : v>b?b : v;
+const lerp = (a,b,t)=> a+(b-a)*t;
+function angDiff(a,b){ let d=(b-a)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
+// deterministic RNG so the stage looks the same every run
+let _seed = 1987;
+function rnd(){ _seed = (_seed*1103515245 + 12345) & 0x7fffffff; return _seed/0x7fffffff; }
+
+// ---------- track ----------
+const W_WORLD = 3400, H_WORLD = 2500;
+const TRACK_W = 96;                    // full track width
+// start line sits on the top straight so the grid gets a clean launch
+const CTRL = [
+  [1350,430],[2250,390],[2870,700],[2970,1310],
+  [2580,1780],[1990,1640],[1490,1970],[900,2080],[500,1720],[380,1150],[560,640]
+];
+// closed Catmull-Rom -> dense samples
+const SAMPLES = [];
+(function(){
+  const n = CTRL.length, per = 40;
+  for(let i=0;i<n;i++){
+    const p0=CTRL[(i-1+n)%n], p1=CTRL[i], p2=CTRL[(i+1)%n], p3=CTRL[(i+2)%n];
+    for(let j=0;j<per;j++){
+      const t=j/per, t2=t*t, t3=t2*t;
+      SAMPLES.push([
+        0.5*((2*p1[0]) + (-p0[0]+p2[0])*t + (2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2 + (-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3),
+        0.5*((2*p1[1]) + (-p0[1]+p2[1])*t + (2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2 + (-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)
+      ]);
+    }
+  }
+})();
+const N = SAMPLES.length;
+const DIST = new Float32Array(N+1);      // cumulative distance at sample i
+const CURV = new Float32Array(N);        // curvature magnitude (1/px)
+const TANG = new Float32Array(N);        // tangent angle
+let TRACK_LEN = 0;
+(function(){
+  for(let i=0;i<N;i++){
+    const a=SAMPLES[i], b=SAMPLES[(i+1)%N];
+    DIST[i]=TRACK_LEN;
+    TRACK_LEN += Math.hypot(b[0]-a[0], b[1]-a[1]);
+    TANG[i]=Math.atan2(b[1]-a[1], b[0]-a[0]);
+  }
+  DIST[N]=TRACK_LEN;
+  for(let i=0;i<N;i++){
+    const t0=TANG[(i-1+N)%N], t1=TANG[(i+1)%N];
+    const seg = DIST[Math.min(i+1,N)]-DIST[Math.max(i-1,0)] || 1;
+    CURV[i]=Math.abs(angDiff(t0,t1))/Math.max(seg,1);
+  }
+  // smooth curvature a little
+  for(let pass=0;pass<2;pass++){
+    const c=CURV.slice();
+    for(let i=0;i<N;i++) CURV[i]=(c[(i-1+N)%N]+c[i]+c[(i+1)%N])/3;
+  }
+})();
+// wet corners: 0..1 per sample, smooth falloff — hairpin, the fast right sweep, and the bottom-left bend
+const WETNESS=new Float32Array(N);
+(function(){
+  const zones=[[210,48],[105,32],[340,26]];   // [center sample, half length]
+  for(const [c0,half] of zones){
+    for(let d=-half;d<=half;d++){
+      const i=((c0+d)%N+N)%N;
+      const t=Math.abs(d)/half;
+      const w=Math.max(0,1-t*t);
+      if(w>WETNESS[i]) WETNESS[i]=w;
+    }
+  }
+})();
+function samplePos(i){ return SAMPLES[((i%N)+N)%N]; }
+// nearest sample to a point, using a cached index for speed
+function nearestSample(x,y,hint){
+  let best=hint??0, bd=Infinity;
+  const scan=(from,to)=>{ for(let k=from;k<=to;k++){ const i=((k%N)+N)%N, p=SAMPLES[i];
+    const d=(p[0]-x)*(p[0]-x)+(p[1]-y)*(p[1]-y); if(d<bd){bd=d;best=i;} } };
+  if(hint==null){ scan(0,N-1); } else { scan(hint-30,hint+30); if(Math.sqrt(bd)>TRACK_W*2.5) { bd=Infinity; scan(0,N-1); } }
+  return [best, Math.sqrt(bd)];
+}
+
+// ---------- cars ----------
+const CAR_LEN=46, CAR_HALF_W=11;
+const LIVERIES = [
+  {name:"YOU — quattro S1", body:"#f5f2ea", accent:"#f7c81e", num:"2",  s1:true,  dot:"#f7c81e"},
+  {name:"Virtanen",  body:"#2e9e46", accent:"#d8e63a", num:"7",  dot:"#2e9e46"},
+  {name:"Rossi",     body:"#c8322b", accent:"#f0e8dc", num:"11", dot:"#c8322b"},
+  {name:"Delacroix", body:"#2f5fc4", accent:"#e8e8e8", num:"5",  dot:"#2f5fc4"},
+  {name:"Okafor",    body:"#8a3fc0", accent:"#f2c94c", num:"14", dot:"#8a3fc0"},
+  {name:"Bergström", body:"#e8e4da", accent:"#3a76d0", num:"98", dot:"#7d90a8"}
+];
+
+// draw a top-down rally car pointing +x, centered at 0,0 (unscaled units)
+function paintCar(ctx, L){
+  const y=(v)=>v; // clarity
+  const rr=(x0,y0,w,h,r)=>{ctx.beginPath();ctx.roundRect(x0,y0,w,h,r);};
+  // tires
+  ctx.fillStyle="#15161a";
+  [[13,-12],[13,7],[-16,-12.6],[-16,7.6]].forEach(([tx,ty],i)=>{
+    rr(tx, ty, 8.4, 5.2, 2); ctx.fill();
+  });
+  // mudflaps
+  ctx.fillStyle="#0d0e10";
+  rr(-21.5,-12.4,2.6,5,1); ctx.fill(); rr(-21.5,7.4,2.6,5,1); ctx.fill();
+  // body base
+  ctx.fillStyle=L.body;
+  ctx.beginPath();
+  ctx.moveTo(22.5,-7.6); ctx.quadraticCurveTo(24.5,0,22.5,7.6);
+  ctx.lineTo(10,10.4); ctx.lineTo(-14,10.8); ctx.lineTo(-21.5,8.6);
+  ctx.lineTo(-21.5,-8.6); ctx.lineTo(-14,-10.8); ctx.lineTo(10,-10.4);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle="rgba(0,0,0,.35)"; ctx.lineWidth=.8; ctx.stroke();
+  // box fender flares
+  ctx.fillStyle=L.s1 ? L.accent : L.body;
+  rr(8.5,-13.4,14,4.2,1.6); ctx.fill(); rr(8.5,9.2,14,4.2,1.6); ctx.fill();
+  rr(-20.6,-13.8,12,4.4,1.6); ctx.fill(); rr(-20.6,9.4,12,4.4,1.6); ctx.fill();
+  if(L.s1){
+    // yellow lower band showing at the sills
+    ctx.fillStyle=L.accent;
+    rr(-8,-12.2,16,2.6,1); ctx.fill(); rr(-8,9.6,16,2.6,1); ctx.fill();
+  } else {
+    ctx.strokeStyle="rgba(0,0,0,.3)"; ctx.lineWidth=.7;
+    rr(8.5,-13.4,14,4.2,1.6); ctx.stroke(); rr(8.5,9.2,14,4.2,1.6); ctx.stroke();
+    rr(-20.6,-13.8,12,4.4,1.6); ctx.stroke(); rr(-20.6,9.4,12,4.4,1.6); ctx.stroke();
+  }
+  // bonnet detail
+  if(L.s1){
+    ctx.fillStyle="#1c1d20"; rr(11,-3.4,9.5,6.8,1.4); ctx.fill();          // vents
+    ctx.fillStyle=L.accent;  rr(10.5,-8.8,11,2.2,1); ctx.fill(); rr(10.5,6.6,11,2.2,1); ctx.fill();
+    ctx.fillStyle="#c8281e"; // red HB slash
+    ctx.beginPath(); ctx.moveTo(20.5,-5.5); ctx.lineTo(22.3,-5); ctx.lineTo(19,5.5); ctx.lineTo(17.2,5); ctx.closePath(); ctx.fill();
+  } else {
+    ctx.fillStyle=L.accent; rr(-22,-2.6,44,5.2,1.5); ctx.fill();           // simple center stripe
+  }
+  // light pod (4 lamps)
+  ctx.fillStyle="#e9e6da";
+  [[-6.9],[-2.3],[2.3],[6.9]].forEach(([ly])=>{
+    ctx.beginPath(); ctx.arc(21.4,ly,1.9,0,TAU); ctx.fill();
+  });
+  ctx.fillStyle="rgba(255,242,180,.95)";
+  [[-6.9],[-2.3],[2.3],[6.9]].forEach(([ly])=>{
+    ctx.beginPath(); ctx.arc(21.4,ly,1.15,0,TAU); ctx.fill();
+  });
+  // glass
+  ctx.fillStyle="#1f2830";
+  ctx.beginPath(); ctx.moveTo(9.5,-8.2); ctx.lineTo(5,-6.6); ctx.lineTo(5,6.6); ctx.lineTo(9.5,8.2); ctx.closePath(); ctx.fill(); // windshield
+  ctx.beginPath(); ctx.moveTo(-6.5,-7.6); ctx.lineTo(-3,-6.4); ctx.lineTo(-3,6.4); ctx.lineTo(-6.5,7.6); ctx.closePath(); ctx.fill(); // rear glass
+  ctx.fillStyle="rgba(31,40,48,.9)"; rr(2.2,-8.6,2,17.2,1); ctx.fill();    // side glass hint
+  // roof + number
+  ctx.fillStyle=L.body; rr(-3.2,-6.6,8.4,13.2,2); ctx.fill();
+  ctx.save();
+  ctx.translate(1,0); ctx.rotate(Math.PI/2);
+  ctx.fillStyle = L.s1 ? "#17181b" : (L.body==="#e8e4da"||L.body==="#f0e8dc" ? "#17181b" : "#f4f2ec");
+  ctx.font="700 8.5px 'Chakra Petch', sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(L.num, 0, 0);
+  ctx.restore();
+  // rear wing (S1's signature shelf)
+  if(L.s1){
+    ctx.fillStyle="#3a3d42"; rr(-19.5,-9,3,18,1); ctx.fill();              // supports
+    ctx.fillStyle="#f3f0e6"; rr(-24.6,-13.2,6.2,26.4,2); ctx.fill();
+    ctx.strokeStyle="#a9a598"; ctx.lineWidth=.8; rr(-24.6,-13.2,6.2,26.4,2); ctx.stroke();
+    ctx.fillStyle="#c8281e"; rr(-24.6,-13.2,6.2,2.6,1); ctx.fill(); rr(-24.6,10.6,6.2,2.6,1); ctx.fill();
+  } else {
+    ctx.fillStyle="rgba(0,0,0,.55)"; rr(-23.4,-10.5,3.4,21,1.4); ctx.fill();
+  }
+}
+// pre-render sprites at 3x
+const SPR_SCALE=3, SPR_SIZE=168;
+const SPRITES = LIVERIES.map(L=>{
+  const c=document.createElement('canvas'); c.width=c.height=SPR_SIZE;
+  const g=c.getContext('2d');
+  g.translate(SPR_SIZE/2,SPR_SIZE/2); g.scale(SPR_SCALE,SPR_SCALE);
+  paintCar(g,L);
+  return c;
+});
+
+// ---------- ground pre-render ----------
+const ground = document.createElement('canvas');
+ground.width=W_WORLD; ground.height=H_WORLD;
+const TREES=[];
+(function buildGround(){
+  const g=ground.getContext('2d');
+  // grass base with mottling
+  g.fillStyle="#6c6f39"; g.fillRect(0,0,W_WORLD,H_WORLD);
+  for(let i=0;i<5200;i++){
+    const x=rnd()*W_WORLD, y=rnd()*H_WORLD, r=5+rnd()*18;
+    g.fillStyle = rnd()<0.5 ? "rgba(92,98,46,.22)" : "rgba(126,124,68,.18)";
+    g.beginPath(); g.arc(x,y,r,0,TAU); g.fill();
+  }
+  // fine grass speckle
+  for(let i=0;i<16000;i++){
+    g.fillStyle = rnd()<0.5 ? "rgba(80,88,40,.25)" : "rgba(140,138,80,.2)";
+    g.fillRect(rnd()*W_WORLD, rnd()*H_WORLD, 2.4, 2.4);
+  }
+  // dry patches near track
+  for(let i=0;i<N;i+=6){
+    const p=SAMPLES[i], a=TANG[i], off=(rnd()*2-1)*(TRACK_W*0.9+40);
+    g.fillStyle="rgba(148,132,84,.18)";
+    g.beginPath(); g.arc(p[0]-Math.sin(a)*off, p[1]+Math.cos(a)*off, 18+rnd()*30,0,TAU); g.fill();
+  }
+  const path=()=>{ g.beginPath(); g.moveTo(SAMPLES[0][0],SAMPLES[0][1]);
+    for(let i=1;i<N;i++) g.lineTo(SAMPLES[i][0],SAMPLES[i][1]); g.closePath(); };
+  g.lineJoin="round"; g.lineCap="round";
+  // shoulders / berm
+  path(); g.strokeStyle="#4c4428"; g.lineWidth=TRACK_W+18; g.stroke();
+  // gravel base
+  path(); g.strokeStyle="#8b7350"; g.lineWidth=TRACK_W; g.stroke();
+  path(); g.strokeStyle="#957c57"; g.lineWidth=TRACK_W-14; g.stroke();
+  // worn racing lines (offset polylines)
+  const drawOffset=(off,w,col)=>{
+    g.beginPath();
+    for(let i=0;i<=N;i++){ const k=i%N, p=SAMPLES[k], a=TANG[k];
+      const x=p[0]-Math.sin(a)*off, y=p[1]+Math.cos(a)*off;
+      i===0?g.moveTo(x,y):g.lineTo(x,y); }
+    g.strokeStyle=col; g.lineWidth=w; g.stroke();
+  };
+  drawOffset(-13,9,"rgba(94,74,48,.5)");
+  drawOffset(13,9,"rgba(94,74,48,.5)");
+  drawOffset(0,10,"rgba(178,156,110,.45)");
+  // gravel speckle
+  for(let i=0;i<N;i+=1){
+    const p=SAMPLES[i], a=TANG[i];
+    for(let s=0;s<3;s++){
+      const off=(rnd()*2-1)*TRACK_W*0.46;
+      g.fillStyle = rnd()<0.5 ? "rgba(60,48,30,.35)" : "rgba(210,190,140,.30)";
+      g.fillRect(p[0]-Math.sin(a)*off, p[1]+Math.cos(a)*off, 2.2, 2.2);
+    }
+  }
+  // wet corners: darkened ground with a faint puddle sheen
+  for(let i=0;i<N;i+=2){
+    const w=WETNESS[i]; if(w<0.03) continue;
+    const p=SAMPLES[i];
+    g.fillStyle=`rgba(44,34,22,${(0.16*w).toFixed(3)})`;
+    g.beginPath(); g.arc(p[0],p[1],TRACK_W/2+8,0,TAU); g.fill();
+  }
+  for(let i=0;i<N;i+=6){
+    const w=WETNESS[i]; if(w<0.3) continue;
+    const p=SAMPLES[i], a=TANG[i];
+    const off=(rnd()*2-1)*TRACK_W*0.3;
+    g.save();
+    g.translate(p[0]-Math.sin(a)*off,p[1]+Math.cos(a)*off);
+    g.rotate(a);
+    g.fillStyle=`rgba(130,150,160,${(0.05+0.09*w*rnd()).toFixed(3)})`;
+    g.beginPath(); g.ellipse(0,0,10+rnd()*14,3.5+rnd()*3,0,0,TAU); g.fill();
+    g.restore();
+  }
+  // start / finish checker strip across the track at s=0
+  {
+    const p=SAMPLES[0], a=TANG[0], nx=-Math.sin(a), ny=Math.cos(a);
+    const sq=8;
+    for(let row=0;row<3;row++){
+      for(let k=-6;k<6;k++){
+        g.fillStyle = (k+row)%2===0 ? "#ecece4" : "#17181a";
+        const cx=p[0]+Math.cos(a)*row*sq + nx*k*sq;
+        const cy=p[1]+Math.sin(a)*row*sq + ny*k*sq;
+        g.save(); g.translate(cx,cy); g.rotate(a); g.fillRect(0,0,sq,sq); g.restore();
+      }
+    }
+  }
+  // corner poles (red/white) at high-curvature outside edges
+  for(let i=0;i<N;i+=8){
+    if(CURV[i]>0.0032 && rnd()<0.6){
+      const p=SAMPLES[i], a=TANG[i];
+      const side = angDiff(TANG[(i-4+N)%N],TANG[(i+4)%N])>0 ? -1 : 1; // outside of the bend
+      const px=p[0]-Math.sin(a)*side*(TRACK_W/2+12), py=p[1]+Math.cos(a)*side*(TRACK_W/2+12);
+      g.fillStyle="rgba(0,0,0,.3)"; g.beginPath(); g.ellipse(px+2,py+3,4.5,2.6,0,0,TAU); g.fill();
+      g.fillStyle="#d5322a"; g.fillRect(px-2.2,py-9,4.4,9);
+      g.fillStyle="#f2ece2"; g.fillRect(px-2.2,py-9,4.4,3);
+    }
+  }
+  // low stone wall along two stretches (visual, like the reference)
+  const wall=(from,to,side)=>{
+    for(let i=from;i<to;i+=5){
+      const k=i%N, p=SAMPLES[k], a=TANG[k];
+      const px=p[0]-Math.sin(a)*side*(TRACK_W/2+26), py=p[1]+Math.cos(a)*side*(TRACK_W/2+26);
+      g.fillStyle="rgba(0,0,0,.28)"; g.beginPath(); g.ellipse(px+2.5,py+3.5,8,4.6,0,0,TAU); g.fill();
+      g.fillStyle=`rgb(${150+rnd()*36|0},${142+rnd()*30|0},${126+rnd()*26|0})`;
+      g.beginPath(); g.ellipse(px,py,6.5+rnd()*2.5,4.6+rnd()*1.6,rnd()*TAU,0,TAU); g.fill();
+    }
+  };
+  wall(300,430,1); wall(60,180,-1);
+  // trees: keep clear of the track; pack tighter near the world edge for a forest wall
+  const addTree=(x,y,minGap)=>{
+    const [,d]=nearestSample(x,y,null);
+    if(d < TRACK_W/2+42) return false;
+    for(const t of TREES){ if((t.x-x)*(t.x-x)+(t.y-y)*(t.y-y) < minGap*minGap) return false; }
+    TREES.push({x,y,r:13+rnd()*12,v:rnd()<0.5?0:1});
+    return true;
+  };
+  let tries=0;
+  while(TREES.length<420 && tries<12000){ tries++;
+    addTree(60+rnd()*(W_WORLD-120), 60+rnd()*(H_WORLD-120), 52);
+  }
+  tries=0;
+  let border=0;
+  while(border<520 && tries<16000){ tries++;
+    // ring hugging the world edge (including slightly outside)
+    const edge=(rnd()*4)|0, t=rnd(), depth=-40+rnd()*150;
+    let x,y;
+    if(edge===0){ x=t*W_WORLD; y=depth; }
+    else if(edge===1){ x=t*W_WORLD; y=H_WORLD-depth; }
+    else if(edge===2){ x=depth; y=t*H_WORLD; }
+    else { x=W_WORLD-depth; y=t*H_WORLD; }
+    if(addTree(x,y,40)) border++;
+  }
+  // tree shadows onto the ground
+  for(const t of TREES){
+    g.fillStyle="rgba(20,26,10,.34)";
+    g.beginPath(); g.ellipse(t.x+t.r*0.5, t.y+t.r*0.6, t.r*1.05, t.r*0.7, 0, 0, TAU); g.fill();
+  }
+})();
+// conifer sprites, seen from above: ragged star rings tapering to a lit tip
+function makePine(rot){
+  const c=document.createElement('canvas'); c.width=c.height=128;
+  const g=c.getContext('2d'); g.translate(64,64); g.rotate(rot);
+  const star=(rad,col,spikes)=>{
+    g.fillStyle=col; g.beginPath();
+    for(let i=0;i<=spikes*2;i++){
+      const a=i/(spikes*2)*TAU;
+      const rr=(i%2===0?rad:rad*0.62)*(0.9+rnd()*0.18);
+      i===0?g.moveTo(Math.cos(a)*rr,Math.sin(a)*rr):g.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);
+    }
+    g.closePath(); g.fill();
+  };
+  star(58,"#243b12",9);
+  star(46,"#31511a",9);
+  star(33,"#3f6420",8);
+  g.translate(-3,-3);
+  star(20,"#4f7a27",7);
+  star(9,"#618f31",6);
+  return c;
+}
+const PINES=[makePine(0),makePine(1.1)];
+
+// ---------- skid layer ----------
+const skid=document.createElement('canvas');
+skid.width=W_WORLD/2; skid.height=H_WORLD/2;
+const skidCtx=skid.getContext('2d');
+skidCtx.scale(0.5,0.5);
+skidCtx.lineCap="round";
+
+// ---------- game state ----------
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const mudCanvas=document.getElementById('mud');
+const mudCtx=mudCanvas.getContext('2d');
+let VW=0,VH=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  VW=window.innerWidth; VH=window.innerHeight;
+  canvas.width=VW*DPR; canvas.height=VH*DPR;
+  mudCanvas.width=VW; mudCanvas.height=VH;
+  mudFx.drops=0;   // canvas was wiped; sync() repaints
+}
+
+// mud thrown onto the screen by cars ahead in wet corners
+const mudFx={
+  level:0, drops:0,
+  spawn(){
+    const x=Math.random()*VW, y=Math.random()*VH;
+    const base=4+Math.random()*Math.random()*24;
+    const t=30+Math.random()*30|0;
+    mudCtx.fillStyle=`rgba(${38+t*0.6|0},${26+t*0.4|0},${14+t*0.2|0},${(0.4+Math.random()*0.35).toFixed(2)})`;
+    const lobes=3+(Math.random()*3|0);
+    for(let i=0;i<lobes;i++){
+      const a=Math.random()*TAU, dd=Math.random()*base*0.7;
+      mudCtx.beginPath();
+      mudCtx.arc(x+Math.cos(a)*dd, y+Math.sin(a)*dd, base*(0.4+Math.random()*0.6), 0, TAU);
+      mudCtx.fill();
+    }
+    if(Math.random()<0.3){ // drip running down
+      mudCtx.beginPath();
+      mudCtx.ellipse(x, y+base+Math.random()*26, base*0.2, 8+Math.random()*20, 0, 0, TAU);
+      mudCtx.fill();
+    }
+  },
+  sync(){
+    const want=Math.round(this.level*95);
+    let batch=0;
+    while(this.drops<want && batch<6){ this.spawn(); this.drops++; batch++; }
+    mudCanvas.style.opacity=(clamp(this.level*1.3,0,1)*0.96).toFixed(3);
+    if(this.level<=0 && this.drops>0){ mudCtx.clearRect(0,0,VW,VH); this.drops=0; }
+  },
+  reset(){ this.level=0; this.drops=0; mudCtx.clearRect(0,0,VW,VH); mudCanvas.style.opacity=0; }
+};
+window.addEventListener('resize',resize); resize();
+
+const LAPS=3;
+const state={ mode:"menu", t:0, countdown:0, cars:[], particles:[], camX:0, camY:0, finishOrder:[] };
+
+function makeCar(idx, gridSlot){
+  // grid: two columns just behind the start line
+  const backOff = 60 + gridSlot*38;
+  let s0 = TRACK_LEN - backOff;
+  let si = 0;
+  while(si<N-1 && DIST[si+1]<s0) si++;
+  const p=SAMPLES[si], a=TANG[si];
+  const lat = (gridSlot%2===0 ? -1 : 1) * 22;
+  return {
+    idx, livery:LIVERIES[idx],
+    x:p[0]-Math.sin(a)*lat, y:p[1]+Math.cos(a)*lat,
+    ang:a, vx:0, vy:0,
+    steer:0, throttle:0, brake:0, hb:false,
+    near:si, progress:-backOff, lastS:DIST[si],
+    finished:false, finishTime:0,
+    isPlayer: idx===0,
+    // AI personality
+    skill: idx===0?1: [0.99,0.958,0.928,0.9,0.872][gridSlot]* (1+ (rnd()*0.02-0.01)),
+    aiOff:(rnd()*2-1)*10,
+    slip:0, offroad:false, engine:0, wet:0, mudTimer:0
+  };
+}
+function resetRace(){
+  state.cars=[];
+  // player starts P6 (last grid slot); AI fill slots 0..4
+  const order=[1,2,3,4,5,0];
+  order.forEach((li,slot)=> state.cars.push(makeCar(li,slot)));
+  state.player=state.cars.find(c=>c.isPlayer);
+  state.t=0; state.countdown=3.999; state.finishOrder=[];
+  state.particles.length=0;
+  mudFx.reset();
+  skidCtx.clearRect(0,0,W_WORLD,H_WORLD);
+  state.camX=state.player.x; state.camY=state.player.y;
+  state.mode="countdown";
+}
+
+// ---------- input ----------
+const keys={};
+const touchState={left:false,right:false,gas:false,brake:false,hb:false};
+window.addEventListener('keydown',e=>{
+  if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
+  keys[e.code]=true;
+  if(e.code==="KeyM") audio.toggle();
+  if(e.code==="KeyR" && state.mode!=="menu") resetRace();
+  if(state.mode==="menu" && (e.code==="Enter"||e.code==="Space")) startGame();
+});
+window.addEventListener('keyup',e=>keys[e.code]=false);
+function bindTouch(id,prop){
+  const el=document.getElementById(id);
+  const on=e=>{e.preventDefault(); touchState[prop]=true;};
+  const off=e=>{e.preventDefault(); touchState[prop]=false;};
+  el.addEventListener('pointerdown',on);
+  el.addEventListener('pointerup',off);
+  el.addEventListener('pointercancel',off);
+  el.addEventListener('pointerleave',off);
+}
+bindTouch('t-left','left'); bindTouch('t-right','right');
+bindTouch('t-gas','gas'); bindTouch('t-brake','brake'); bindTouch('t-hb','hb');
+if(matchMedia('(pointer:coarse)').matches) document.body.classList.add('touch');
+
+// ---------- gamepad ----------
+// standard mapping: left stick / d-pad steer, RT (or A) throttle, LT (or B) brake,
+// X handbrake, Start = confirm on menus / restart mid-race
+const pad={steer:0, throttle:0, brake:0, hb:false, seen:false, prevConfirm:false};
+window.addEventListener('gamepadconnected',()=>{ if(!pad.seen){ pad.seen=true; toast("CONTROLLER ON",900,true); }});
+function pollPad(){
+  pad.steer=0; pad.throttle=0; pad.brake=0; pad.hb=false;
+  let gp=null;
+  const gps=navigator.getGamepads ? navigator.getGamepads() : [];
+  for(const g of gps){ if(g && g.connected){ gp=g; break; } }
+  if(!gp) return;
+  if(!pad.seen){ pad.seen=true; toast("CONTROLLER ON",900,true); }
+  const b=i=>{ const bt=gp.buttons[i]; return bt ? (bt.value || (bt.pressed?1:0)) : 0; };
+  let steer=gp.axes[0]||0;
+  if(Math.abs(steer)<0.15) steer=0;                       // dead zone
+  else steer=Math.sign(steer)*(Math.abs(steer)-0.15)/0.85; // rescale so full lock is reachable
+  if(b(14)) steer=-1;
+  if(b(15)) steer=1;
+  pad.steer=clamp(steer,-1,1);
+  pad.throttle=clamp(Math.max(b(7), b(0)),0,1);           // RT or A
+  pad.brake=clamp(Math.max(b(6), b(1)),0,1);              // LT or B
+  pad.hb=b(2)>0.5;                                        // X
+  const confirm=b(9)>0.5;                                 // Start
+  if(confirm && !pad.prevConfirm){
+    if(state.mode==="menu") startGame();
+    else if(state.mode==="results"){ $('endScreen').classList.add('hidden'); resetRace(); }
+    else resetRace();                                     // mid-race restart, same as R
+  }
+  pad.prevConfirm=confirm;
+}
+
+// ---------- audio (tiny synth engine) ----------
+const audio={
+  ac:null, osc:null, gain:null, filt:null, muted:false, started:false,
+  start(){
+    if(this.started||this.muted) return;
+    try{
+      this.ac=new (window.AudioContext||window.webkitAudioContext)();
+      this.osc=this.ac.createOscillator(); this.osc.type="sawtooth";
+      this.osc2=this.ac.createOscillator(); this.osc2.type="square";
+      this.filt=this.ac.createBiquadFilter(); this.filt.type="lowpass"; this.filt.frequency.value=700;
+      this.gain=this.ac.createGain(); this.gain.gain.value=0;
+      const g2=this.ac.createGain(); g2.gain.value=0.35;
+      this.osc.connect(this.filt); this.osc2.connect(g2); g2.connect(this.filt);
+      this.filt.connect(this.gain); this.gain.connect(this.ac.destination);
+      this.osc.start(); this.osc2.start();
+      this.started=true;
+    }catch(e){}
+  },
+  update(speed,throttle){
+    if(!this.started||this.muted||!this.ac) return;
+    // 5-cylinder-ish warble: base pitch from speed, slight beat between oscs
+    const f=52+speed*0.28+throttle*22;
+    this.osc.frequency.setTargetAtTime(f,this.ac.currentTime,0.05);
+    this.osc2.frequency.setTargetAtTime(f*1.503,this.ac.currentTime,0.05);
+    this.filt.frequency.setTargetAtTime(420+speed*1.6+throttle*500,this.ac.currentTime,0.08);
+    const target=(state.mode==="race"||state.mode==="countdown")?(0.028+throttle*0.02):0;
+    this.gain.gain.setTargetAtTime(target,this.ac.currentTime,0.1);
+  },
+  toggle(){
+    this.muted=!this.muted;
+    if(this.muted && this.gain) this.gain.gain.setTargetAtTime(0,this.ac.currentTime,0.03);
+    if(!this.muted) this.start();
+    toast(this.muted?"SOUND OFF":"SOUND ON",700);
+  }
+};
+
+// ---------- physics ----------
+const P={
+  accel:600, revAccel:260, brakeF:980,
+  dragK:0.0019, roll:36,
+  gripGravel:4.4, gripHB:1.5, gripGrass:3.2,
+  yawMax:2.75, yawSpeedRef:150,
+  maxRev:-170,
+  grassDragMul:2.6, grassAccelMul:0.55,
+  aiLatAcc:390
+};
+function stepCar(c,dt){
+  const cos=Math.cos(c.ang), sin=Math.sin(c.ang);
+  let vf =  c.vx*cos + c.vy*sin;
+  let vl = -c.vx*sin + c.vy*cos;
+
+  // surface
+  const [ni,d]=nearestSample(c.x,c.y,c.near); c.near=ni;
+  c.offroad = d > TRACK_W/2 + 6;
+  const wet = c.offroad ? 0 : WETNESS[ni];
+  c.wet = wet;
+  if(c.mudTimer>0) c.mudTimer=Math.max(0,c.mudTimer-dt);
+
+  // drive (wet ground: less traction, much weaker brakes)
+  const accelMul = (c.offroad?P.grassAccelMul:1)*(1-0.15*wet);
+  if(c.throttle>0) vf += P.accel*accelMul*c.throttle*dt;
+  if(c.brake>0){
+    if(vf>5) vf -= P.brakeF*(1-0.35*wet)*c.brake*dt;
+    else vf -= P.revAccel*c.brake*dt;           // reverse
+  }
+  vf=Math.max(vf,P.maxRev);
+  // drag + rolling resistance
+  const dragMul = c.offroad?P.grassDragMul:1;
+  vf -= (P.dragK*vf*Math.abs(vf) + Math.sign(vf)*Math.min(Math.abs(vf),P.roll*dragMul))*dt*(c.offroad?1.6:1);
+
+  // steering
+  const sf = clamp(Math.abs(vf)/P.yawSpeedRef,0,1) * (1/(1+Math.abs(vf)/1000));
+  let yaw = c.steer * P.yawMax * sf * Math.sign(vf||1);
+  if(c.hb) yaw*=1.4;
+  c.ang += yaw*dt;
+
+  // lateral grip (this is the rally feel: gravel lets the tail walk; wet gravel barely holds)
+  let grip = c.offroad?P.gripGrass:P.gripGravel*(1-0.55*wet);
+  if(c.hb) grip=P.gripHB*(1-0.35*wet);
+  if(c.brake>0 && Math.abs(vf)>120) grip*=0.72;   // pendulum: braking unsettles the car
+  vl *= Math.exp(-grip*dt);
+  c.slip=Math.abs(vl);
+
+  const c2=Math.cos(c.ang), s2=Math.sin(c.ang);
+  c.vx = vf*c2 - vl*s2;
+  c.vy = vf*s2 + vl*c2;
+  c.x += c.vx*dt; c.y += c.vy*dt;
+  c.x=clamp(c.x,30,W_WORLD-30); c.y=clamp(c.y,30,H_WORLD-30);
+  c.vf=vf;
+
+  // progress along stage
+  const s=DIST[c.near];
+  let ds=s-c.lastS;
+  if(ds<-TRACK_LEN/2) ds+=TRACK_LEN;
+  if(ds> TRACK_LEN/2) ds-=TRACK_LEN;
+  c.progress+=ds; c.lastS=s;
+
+  // marks + dust
+  if(state.mode==="race"||state.mode==="countdown"){
+    if(c.slip>62 || (c.hb&&Math.abs(vf)>60)){
+      const bx=c.x-Math.cos(c.ang)*14, by=c.y-Math.sin(c.ang)*14;
+      const nx=-Math.sin(c.ang)*7.5, ny=Math.cos(c.ang)*7.5;
+      skidCtx.strokeStyle=wet>0.3?"rgba(34,25,15,.6)":"rgba(52,40,26,.5)"; skidCtx.lineWidth=4;
+      skidCtx.beginPath(); skidCtx.moveTo(bx+nx,by+ny); skidCtx.lineTo(bx+nx-c.vx*dt*1.4,by+ny-c.vy*dt*1.4); skidCtx.stroke();
+      skidCtx.beginPath(); skidCtx.moveTo(bx-nx,by-ny); skidCtx.lineTo(bx-nx-c.vx*dt*1.4,by-ny-c.vy*dt*1.4); skidCtx.stroke();
+    }
+    const dusty = c.slip>45 || c.offroad && Math.abs(vf)>60 || (wet>0.3 && Math.abs(vf)>180);
+    if(dusty && state.particles.length<260 && Math.random()<0.7){
+      state.particles.push({
+        x:c.x-Math.cos(c.ang)*16+(Math.random()*10-5),
+        y:c.y-Math.sin(c.ang)*16+(Math.random()*10-5),
+        vx:(Math.random()*40-20)-c.vx*0.06, vy:(Math.random()*40-20)-c.vy*0.06,
+        r:4+Math.random()*6, life:0.9, max:0.9,
+        col:c.offroad?"122,124,66": wet>0.3?"78,58,36":"148,126,88"
+      });
+    }
+  }
+}
+
+// simple circle collisions between cars
+function collide(){
+  const R=17;
+  for(let i=0;i<state.cars.length;i++)for(let j=i+1;j<state.cars.length;j++){
+    const a=state.cars[i],b=state.cars[j];
+    const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy);
+    if(d>0 && d<R*2){
+      const nx=dx/d, ny=dy/d, pen=(R*2-d)/2;
+      a.x-=nx*pen; a.y-=ny*pen; b.x+=nx*pen; b.y+=ny*pen;
+      const rvx=b.vx-a.vx, rvy=b.vy-a.vy, rel=rvx*nx+rvy*ny;
+      if(rel<0){ const imp=rel*0.62;
+        a.vx+=nx*imp; a.vy+=ny*imp; b.vx-=nx*imp; b.vy-=ny*imp; }
+    }
+  }
+}
+
+// ---------- AI ----------
+function driveAI(c,dt){
+  const look = clamp(Math.abs(c.vf||0)*0.32,60,240);
+  // find sample 'look' ahead
+  let ti=c.near, remaining=look;
+  while(remaining>0){ const nx=(ti+1)%N; remaining-=DIST[nx===0?N:nx]-DIST[ti] || (TRACK_LEN-DIST[ti]); ti=nx; }
+  const tp=samplePos(ti), ta=TANG[ti];
+  const tx=tp[0]-Math.sin(ta)*c.aiOff, ty=tp[1]+Math.cos(ta)*c.aiOff;
+  const want=Math.atan2(ty-c.y,tx-c.x);
+  c.steer=clamp(angDiff(c.ang,want)*2.6,-1,1);
+  // target speed from curvature ahead (min over the braking window)
+  let minV=Infinity, si=c.near;
+  const win=clamp(Math.abs(c.vf||0)*0.7,120,420);
+  let acc=0;
+  while(acc<win){
+    const k=CURV[si]; const v=Math.sqrt(P.aiLatAcc/Math.max(k,0.0004));
+    // weight far corners less
+    minV=Math.min(minV, v + acc*0.25);
+    const nx2=(si+1)%N; acc += (nx2===0? TRACK_LEN-DIST[si] : DIST[nx2]-DIST[si]); si=nx2;
+  }
+  // slow down for wet ground, here or just ahead; mud in the windscreen costs pace too
+  const wmax=Math.max(WETNESS[c.near],WETNESS[ti]);
+  let target=clamp(minV,120,600)*c.skill*(1-0.22*wmax);
+  if(c.mudTimer>0){
+    target*=0.92;
+    c.steer=clamp(c.steer+(Math.random()-0.5)*0.25,-1,1);
+  }
+  const vf=c.vf||0;
+  if(vf<target-8){ c.throttle=1; c.brake=0; }
+  else if(vf>target+22){ c.throttle=0; c.brake=1; }
+  else { c.throttle=0.4; c.brake=0; }
+  c.hb = CURV[c.near]>0.006 && vf>220;   // yank it in hairpins
+  // stuck recovery
+  if(Math.abs(vf)<20 && state.t>4 && !c.finished){
+    c.stuck=(c.stuck||0)+dt;
+    if(c.stuck>1.2){ c.throttle=1; c.steer=Math.sign(angDiff(c.ang,TANG[c.near])); if(c.stuck>2.6)c.stuck=0; }
+  } else c.stuck=0;
+}
+
+// ---------- race flow ----------
+const $=id=>document.getElementById(id);
+let toastTimer=null;
+function toast(msg,ms,green){
+  const el=$('toast'); el.textContent=msg;
+  el.classList.toggle('green',!!green); el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'),ms);
+}
+function fmt(t){
+  const m=Math.floor(t/60), s=t%60;
+  return m+":"+(s<10?"0":"")+s.toFixed(3);
+}
+function playerLap(c){ return clamp(Math.floor(c.progress/TRACK_LEN)+1,1,LAPS); }
+
+function update(dt){
+  if(state.mode==="menu"||state.mode==="results") return;
+
+  if(state.mode==="countdown"){
+    const prev=Math.ceil(state.countdown);
+    state.countdown-=dt;
+    const now=Math.ceil(state.countdown);
+    if(now!==prev && now>0) toast(String(now),800);
+    if(state.countdown<=0){ state.mode="race"; toast("GO!",900,true); }
+    else if(prev===4) toast("3",800);
+  }
+  if(state.mode==="race") state.t+=dt;
+
+  const racing=state.mode==="race";
+  // player input
+  const p=state.player;
+  if(window.AUTOPILOT && racing && !p.finished){
+    driveAI(p,dt);           // debug: self-driving player for testing
+  } else if(!p.finished){
+    const kSteer=(keys.ArrowLeft||keys.KeyA||touchState.left?-1:0)+(keys.ArrowRight||keys.KeyD||touchState.right?1:0);
+    p.steer = clamp(kSteer + pad.steer, -1, 1);
+    p.throttle = racing ? Math.max((keys.ArrowUp||keys.KeyW||touchState.gas)?1:0, pad.throttle) : 0;
+    p.brake = racing ? Math.max((keys.ArrowDown||keys.KeyS||touchState.brake)?1:0, pad.brake) : 0;
+    p.hb = !!(keys.Space||touchState.hb||pad.hb);
+  } else { p.throttle=0; p.brake=0.4; p.hb=false; }
+  // a mud-caked windscreen makes the wheel twitchy
+  if(!p.finished && mudFx.level>0.05 && !window.AUTOPILOT)
+    p.steer=clamp(p.steer+(Math.random()-0.5)*0.35*mudFx.level,-1,1);
+
+  for(const c of state.cars){
+    if(!c.isPlayer){
+      if(racing && !c.finished) driveAI(c,dt);
+      else { c.throttle=0; c.brake=c.finished?0.5:0; }
+    }
+    stepCar(c,dt);
+    if(racing && !c.finished && c.progress>=LAPS*TRACK_LEN){
+      c.finished=true; c.finishTime=state.t;
+      state.finishOrder.push(c);
+      if(c.isPlayer){
+        setTimeout(showResults,1400);
+        state.playerDone=true;
+      } else if(!state.playerDone){
+        // nothing — HUD position covers it
+      }
+    }
+  }
+  collide();
+
+  // mud: a car on wet ground trails a spray plume — sit in it and you get caked,
+  // offset your line and you stay clean; chasers in YOUR plume suffer the same
+  if(racing && !p.finished){
+    let spray=0;
+    for(const c of state.cars){
+      if(c.isPlayer) continue;
+      if(c.wet>0.2 && inPlume(c,p)) spray++;
+      if(!c.finished && (p.wet||0)>0.25 && inPlume(p,c)) c.mudTimer=2.5;
+    }
+    if(spray>0) mudFx.level=Math.min(1, mudFx.level+dt*0.22*spray);
+    else if((p.wet||0)<0.15) mudFx.level=Math.max(0, mudFx.level-dt*0.22);  // dry ground: clears
+    else mudFx.level=Math.max(0, mudFx.level-dt*0.05);                       // still wet: barely
+    mudFx.sync();
+  }
+
+  // lap toast for player
+  const lapNow=playerLap(p);
+  if(state.lastLap===undefined) state.lastLap=lapNow;
+  if(lapNow!==state.lastLap && !p.finished){
+    state.lastLap=lapNow;
+    if(lapNow===LAPS) toast("FINAL LAP",1200);
+    else toast("LAP "+lapNow,1000);
+  }
+
+  // particles
+  for(let i=state.particles.length-1;i>=0;i--){
+    const q=state.particles[i];
+    q.life-=dt; if(q.life<=0){ state.particles.splice(i,1); continue; }
+    q.x+=q.vx*dt; q.y+=q.vy*dt; q.r+=14*dt;
+  }
+
+  // camera: follow with velocity lookahead
+  const lead=0.42;
+  const cx=p.x+p.vx*lead, cy=p.y+p.vy*lead;
+  const k=1-Math.exp(-4.2*dt);
+  state.camX=lerp(state.camX,cx,k);
+  state.camY=lerp(state.camY,cy,k);
+  // keep the view inside the forest (render() computes the same scale)
+  const sc=camScale();
+  const hw=VW*DPR/sc/2, hh=VH*DPR/sc/2;
+  if(hw*2<W_WORLD) state.camX=clamp(state.camX,hw-40,W_WORLD-hw+40);
+  if(hh*2<H_WORLD) state.camY=clamp(state.camY,hh-40,H_WORLD-hh+40);
+
+  audio.update(Math.abs(p.vf||0),p.throttle);
+}
+
+// spray plume trailing a moving car: a wedge that widens with distance.
+// `back` is hit only while roughly in line behind `front` — offset to dodge it.
+function inPlume(front,back){
+  if(Math.abs(front.vf||0)<80) return false;   // a crawling car doesn't spray
+  const fx=Math.cos(front.ang), fy=Math.sin(front.ang);
+  const rx=back.x-front.x, ry=back.y-front.y;
+  const along=-(rx*fx+ry*fy);                  // how far behind the front car
+  if(along<15 || along>430) return false;
+  const lat=Math.abs(rx*fy-ry*fx);             // sideways offset from its line
+  return lat < 20 + along*0.12;                // ~20px wide up close, ~72px at range
+}
+
+// position of a car among the field
+function rankOf(car){
+  let r=1;
+  for(const c of state.cars) if(c!==car && c.progress>car.progress+0.001) r++;
+  return r;
+}
+
+// ---------- render ----------
+function camScale(){
+  const p=state.player;
+  const zoom = 1.06 - clamp(Math.abs(p?.vf||0)/570,0,1)*0.16; // pull back at speed
+  return zoom*DPR* clamp(Math.min(VW,VH)/760,0.8,1.25);
+}
+function render(){
+  const p=state.player;
+  const scale=camScale();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle="#66693a";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  if(!p){ return; }
+  ctx.setTransform(scale,0,0,scale, canvas.width/2-state.camX*scale, canvas.height/2-state.camY*scale);
+
+  // visible world rect
+  const vw=canvas.width/scale, vh=canvas.height/scale;
+  const x0=state.camX-vw/2, y0=state.camY-vh/2;
+
+  ctx.drawImage(ground,0,0);
+  ctx.drawImage(skid,0,0,skid.width,skid.height,0,0,W_WORLD,H_WORLD);
+
+  // dust below cars? — no, dust above cars looks better; shadows first
+  for(const c of state.cars){
+    ctx.save();
+    ctx.translate(c.x+5,c.y+6); ctx.rotate(c.ang);
+    ctx.fillStyle="rgba(0,0,0,.32)";
+    ctx.beginPath(); ctx.ellipse(0,0,26,14,0,0,TAU); ctx.fill();
+    ctx.restore();
+  }
+  // cars (draw player last)
+  const drawCarSpr=c=>{
+    ctx.save();
+    ctx.translate(c.x,c.y); ctx.rotate(c.ang);
+    const s=SPR_SIZE/SPR_SCALE;
+    ctx.drawImage(SPRITES[c.idx],-s/2,-s/2,s,s);
+    // brake glow
+    if(c.brake>0 && (c.vf||0)>10){
+      ctx.fillStyle="rgba(255,60,30,.9)";
+      ctx.fillRect(-23,-8,3,4); ctx.fillRect(-23,4,3,4);
+    }
+    ctx.restore();
+  };
+  for(const c of state.cars) if(!c.isPlayer) drawCarSpr(c);
+  drawCarSpr(p);
+
+  // dust
+  for(const q of state.particles){
+    ctx.fillStyle=`rgba(${q.col},${(q.life/q.max)*0.4})`;
+    ctx.beginPath(); ctx.arc(q.x,q.y,q.r,0,TAU); ctx.fill();
+  }
+  // trees over everything
+  for(const t of TREES){
+    if(t.x<x0-80||t.x>x0+vw+80||t.y<y0-80||t.y>y0+vh+80) continue;
+    const s=t.r*2.4;
+    ctx.drawImage(PINES[t.v],t.x-s/2,t.y-s/2,s,s);
+  }
+
+  // vignette
+  ctx.setTransform(1,0,0,1,0,0);
+  const vg=ctx.createRadialGradient(canvas.width/2,canvas.height/2,Math.min(canvas.width,canvas.height)*0.42,canvas.width/2,canvas.height/2,Math.max(canvas.width,canvas.height)*0.72);
+  vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(10,14,8,.42)");
+  ctx.fillStyle=vg; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  renderHUD();
+  renderMinimap();
+}
+
+function renderHUD(){
+  const p=state.player; if(!p) return;
+  $('posNow').textContent=rankOf(p);
+  $('lapNow').textContent=playerLap(p);
+  $('raceTime').textContent=fmt(state.t);
+  const kmh=Math.round(Math.abs(p.vf||0)*0.36);
+  $('speedVal').textContent=String(kmh).padStart(3,"0");
+  $('speedBar').style.width=clamp(Math.abs(p.vf||0)/570*100,0,100)+"%";
+}
+
+const mmCtx=$('minimap').getContext('2d');
+function renderMinimap(){
+  const w=150,h=118, pad=10;
+  mmCtx.clearRect(0,0,w,h);
+  const sx=(w-pad*2)/W_WORLD, sy=(h-pad*2)/H_WORLD, s=Math.min(sx,sy);
+  const ox=pad+(w-pad*2-W_WORLD*s)/2, oy=pad+(h-pad*2-H_WORLD*s)/2;
+  mmCtx.beginPath();
+  for(let i=0;i<N;i+=4){
+    const q=SAMPLES[i];
+    i===0?mmCtx.moveTo(ox+q[0]*s,oy+q[1]*s):mmCtx.lineTo(ox+q[0]*s,oy+q[1]*s);
+  }
+  mmCtx.closePath();
+  mmCtx.strokeStyle="rgba(255,255,255,.75)"; mmCtx.lineWidth=3; mmCtx.lineJoin="round"; mmCtx.stroke();
+  // wet corners marked in blue
+  mmCtx.beginPath();
+  let pen=false;
+  for(let i=0;i<N;i+=2){
+    if(WETNESS[i]>0.25){
+      const q=SAMPLES[i], X=ox+q[0]*s, Y=oy+q[1]*s;
+      pen ? mmCtx.lineTo(X,Y) : mmCtx.moveTo(X,Y);
+      pen=true;
+    } else pen=false;
+  }
+  mmCtx.strokeStyle="rgba(110,165,205,.95)"; mmCtx.lineWidth=3; mmCtx.stroke();
+  for(const c of state.cars){
+    mmCtx.fillStyle=c.isPlayer?"#f7c81e":c.livery.dot;
+    mmCtx.beginPath(); mmCtx.arc(ox+c.x*s,oy+c.y*s,c.isPlayer?3.4:2.6,0,TAU); mmCtx.fill();
+  }
+}
+
+// ---------- results ----------
+function showResults(){
+  if(state.mode!=="race") return;
+  state.mode="results";
+  const p=state.player;
+  const pos=state.finishOrder.indexOf(p)+1;
+  $('endTitle').innerHTML = pos===1 ? 'P1 <span>WINNER</span>' : 'P'+pos+' <span>FINISH</span>';
+  $('endEyebrow').textContent = pos===1
+    ? "Stage won — the quattro delivers"
+    : pos<=3 ? "Stage complete — podium finish" : "Stage complete";
+  // rank all: finished by time, rest by progress
+  const rows=[...state.cars].sort((a,b)=>{
+    if(a.finished&&b.finished) return a.finishTime-b.finishTime;
+    if(a.finished) return -1; if(b.finished) return 1;
+    return b.progress-a.progress;
+  });
+  const leader=rows[0];
+  let html="<tr><th></th><th>Driver</th><th style='text-align:right'>Time</th></tr>";
+  rows.forEach((c,i)=>{
+    const t = c.finished
+      ? (i===0?fmt(c.finishTime):"+"+(c.finishTime-leader.finishTime).toFixed(3))
+      : "running";
+    html+=`<tr class="${c.isPlayer?'you':''}">
+      <td class="pos">${i+1}</td>
+      <td><span class="swatch" style="background:${c.livery.dot}"></span>${c.livery.name}</td>
+      <td class="time">${t}</td></tr>`;
+  });
+  $('resultsTable').innerHTML=html;
+  $('endScreen').classList.remove('hidden');
+}
+
+// ---------- car preview on start screen ----------
+(function(){
+  const c=$('carPreview'), g=c.getContext('2d');
+  g.clearRect(0,0,260,130);
+  g.save();
+  g.translate(130,68);
+  g.rotate(-0.35);
+  g.scale(3.4,3.4);
+  g.fillStyle="rgba(0,0,0,.35)";
+  g.beginPath(); g.ellipse(2,3,27,15,0,0,TAU); g.fill();
+  paintCar(g,LIVERIES[0]);
+  g.restore();
+})();
+
+// ---------- boot ----------
+function startGame(){
+  $('startScreen').classList.add('hidden');
+  audio.start();
+  resetRace();
+}
+$('startBtn').addEventListener('click',startGame);
+$('againBtn').addEventListener('click',()=>{
+  $('endScreen').classList.add('hidden');
+  resetRace();
+});
+
+let last=performance.now();
+function frame(now){
+  let dt=(now-last)/1000; last=now;
+  dt=Math.min(dt,0.05);
+  pollPad();   // also handles menu confirm, so it runs outside update()
+  // fixed-ish substeps keep physics stable on slow frames
+  const steps=dt>0.025?2:1;
+  for(let i=0;i<steps;i++) update(dt/steps);
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
