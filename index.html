@@ -585,7 +585,7 @@ function makeCar(idx, gridSlot){
     finished:false, finishTime:0,
     isPlayer: idx===0,
     // AI personality
-    skill: idx===0?1: [0.99,0.958,0.928,0.9,0.872][gridSlot]* (1+ (rnd()*0.02-0.01)),
+    skill: idx===0?1: [1.0,0.98,0.955,0.935,0.91][gridSlot]* (1+ (rnd()*0.02-0.01)),
     aiOff:(rnd()*2-1)*10,
     slip:0, offroad:false, engine:0, wet:0, mudTimer:0
   };
@@ -696,14 +696,18 @@ const audio={
 };
 
 // ---------- physics ----------
+// Surface note: the looser pre-tune (commit d8ba538) drove like SNOW/ICE and is
+// earmarked for a winter stage — gripGravel 4.5, gripHB 1.1, steer shed
+// 0.45@300, power oversteer 0.78, brake grip 0.62, slide feedback 0.35,
+// aiLatAcc 330, AI skills [0.99,0.958,0.928,0.9,0.872].
 const P={
   accel:600, revAccel:260, brakeF:980,
   dragK:0.0019, roll:36,
-  gripGravel:4.5, gripHB:1.1, gripGrass:3.2,
+  gripGravel:5.2, gripHB:1.2, gripGrass:3.2,
   yawMax:3.05, yawSpeedRef:150,
   maxRev:-170,
   grassDragMul:2.6, grassAccelMul:0.55,
-  aiLatAcc:330
+  aiLatAcc:365
 };
 function stepCar(c,dt){
   // steer FIRST: the nose rotates but momentum stays put in the world, so
@@ -747,12 +751,12 @@ function stepCar(c,dt){
   let grip = c.offroad?P.gripGrass:P.gripGravel*(1-0.55*wet);
   if(c.hb) grip=P.gripHB*(1-0.35*wet);
   // turning at speed sheds grip — corners are where the car dances
-  grip *= 1 - 0.45*Math.abs(c.steer)*clamp(Math.abs(vf)/300,0,1);
-  if(c.throttle>0.6 && Math.abs(c.steer)>0.35) grip*=0.78;  // power oversteer
-  if(c.brake>0 && Math.abs(vf)>120) grip*=0.62;   // pendulum: braking unsettles the car
+  grip *= 1 - 0.38*Math.abs(c.steer)*clamp(Math.abs(vf)/320,0,1);
+  if(c.throttle>0.6 && Math.abs(c.steer)>0.35) grip*=0.82;  // power oversteer
+  if(c.brake>0 && Math.abs(vf)>120) grip*=0.68;   // pendulum: braking unsettles the car
   // a sliding car keeps sliding: sideways speed erodes what grip is left,
   // so a provoked drift holds its angle instead of snapping straight
-  grip *= 1 - 0.35*clamp(c.slip/140,0,1);
+  grip *= 1 - 0.28*clamp(c.slip/140,0,1);
   grip = Math.max(grip,0.45);
   vl *= Math.exp(-grip*dt);
   c.slip=Math.abs(vl);
