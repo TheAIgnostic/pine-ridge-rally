@@ -3,8 +3,9 @@
 A top-down rally racing game in a single HTML file — no dependencies, no build step.
 Open `index.html` in a browser and race.
 
-You drive the Audi Sport quattro S1 against five AI cars over 3 laps of a gravel
-forest stage.
+You drive the Audi Sport quattro S1 against five AI cars over 3 laps. Two
+special stages: **Pine Ridge** (gravel forest, wet corners) and **Frostbite
+Pass** (snow with sheet-ice corners — much less grip, longer slides).
 
 ## Features
 

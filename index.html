@@ -147,7 +147,7 @@
 
   <div class="screen" id="startScreen">
     <div class="card">
-      <div class="eyebrow">Special Stage 01 &middot; Gravel &middot; 3 Laps</div>
+      <div class="eyebrow">Two special stages &middot; 3 laps each</div>
       <h1>PINE RIDGE <span>RALLY</span></h1>
       <p class="sub">Six cars, one forest stage. You drive the Audi Sport quattro S1. The blue-marked corners are wet &mdash; slick under the tires, and sitting in the spray plume of the car ahead throws mud across your windscreen until the road dries out. Offset your line to dodge the plume.</p>
       <canvas id="carPreview" width="260" height="130"></canvas>
@@ -160,7 +160,8 @@
         <kbd>R</kbd><div>Restart race</div>
         <kbd>&#127918; STICK + RT/LT</kbd><div>Controller: steer, throttle, brake &middot; A gas &middot; X handbrake &middot; Start confirms</div>
       </div>
-      <button class="btn" id="startBtn">START ENGINE</button>
+      <button class="btn" id="startBtn">SS1 &middot; PINE RIDGE &mdash; GRAVEL</button>
+      <button class="btn secondary" id="startSnowBtn">SS2 &middot; FROSTBITE PASS &mdash; SNOW &amp; ICE</button>
     </div>
   </div>
 
@@ -170,6 +171,7 @@
       <h1 id="endTitle">P1 <span>FINISH</span></h1>
       <table class="results" id="resultsTable"></table>
       <button class="btn" id="againBtn">RACE AGAIN</button>
+      <button class="btn secondary" id="stageBtn">STAGE SELECT</button>
     </div>
   </div>
 </div>
@@ -354,38 +356,107 @@ const SPRITES = LIVERIES.map(L=>{
   return c;
 });
 
-// ---------- ground pre-render ----------
+// ---------- themes & ground pre-render ----------
+// Everything the eye reads as "forest stage" vs "winter stage" lives here.
+// The slick-zone system (WETNESS) renders as rain-soaked dirt in the forest
+// and as sheet ice in the snow theme; physics reads the same zones either way.
+const THEMES={
+  forest:{
+    bg:"#66693a", base:"#6c6f39",
+    mottle:["rgba(92,98,46,.22)","rgba(126,124,68,.18)"],
+    speckle:["rgba(80,88,40,.25)","rgba(140,138,80,.2)"],
+    nearPatch:"rgba(148,132,84,.18)",
+    shoulder:"#4c4428", road1:"#8b7350", road2:"#957c57",
+    worn:"rgba(94,74,48,.5)", wornC:"rgba(178,156,110,.45)",
+    grain:["rgba(60,48,30,.35)","rgba(210,190,140,.30)"],
+    zoneTint:"44,34,22", zoneAlpha:0.16, sheen:"130,150,160", sheenAlpha:0.09,
+    stone:()=>`rgb(${150+rnd()*36|0},${142+rnd()*30|0},${126+rnd()*26|0})`,
+    treeShadow:"rgba(20,26,10,.34)",
+    pinePalette:["#243b12","#31511a","#3f6420","#4f7a27","#618f31"],
+    skid:"rgba(52,40,26,.22)", skidZone:"rgba(34,25,15,.3)",
+    dustGrass:"122,124,66", dustZone:"78,58,36", dustRoad:"148,126,88",
+    splat:t=>[38+t*0.6|0,26+t*0.4|0,14+t*0.2|0]
+  },
+  snow:{
+    bg:"#c2ccd4", base:"#d5dde3",
+    mottle:["rgba(255,255,255,.35)","rgba(176,190,202,.25)"],
+    speckle:["rgba(255,255,255,.4)","rgba(158,174,188,.25)"],
+    nearPatch:"rgba(255,255,255,.25)",
+    shoulder:"#93a0ab", road1:"#b4bcc4", road2:"#c2c9d0",
+    worn:"rgba(118,112,104,.35)", wornC:"rgba(232,238,242,.5)",
+    grain:["rgba(108,110,114,.3)","rgba(255,255,255,.45)"],
+    zoneTint:"104,146,178", zoneAlpha:0.24, sheen:"238,248,254", sheenAlpha:0.18,
+    stone:()=>`rgb(${205+rnd()*30|0},${212+rnd()*28|0},${222+rnd()*24|0})`,
+    treeShadow:"rgba(45,60,78,.24)",
+    pinePalette:["#1d3310","#294413","#33541a","#dde8ee","#f3f8fb"],
+    skid:"rgba(98,88,76,.3)", skidZone:"rgba(64,88,110,.28)",
+    dustGrass:"228,236,244", dustZone:"188,206,222", dustRoad:"214,222,230",
+    splat:t=>[186+t*0.5|0,193+t*0.5|0,203+t*0.5|0]
+  }
+};
+// stages pair a surface (physics preset, defined below) with a theme (visuals)
+const STAGES={
+  pine: {label:"PINE RIDGE",     surface:"gravel", theme:"forest"},
+  frost:{label:"FROSTBITE PASS", surface:"snow",   theme:"snow"}
+};
+let STAGE_KEY="pine";
+try{ const v=localStorage.getItem('prr-stage'); if(v && STAGES[v]) STAGE_KEY=v; }catch(e){}
+let THEME=THEMES[STAGES[STAGE_KEY].theme];
 const ground = document.createElement('canvas');
 ground.width=W_WORLD; ground.height=H_WORLD;
 const TREES=[];
-(function buildGround(){
+function generateTrees(){
+  const addTree=(x,y,minGap)=>{
+    const [,d]=nearestSample(x,y,null);
+    if(d < TRACK_W/2+42) return false;
+    for(const t of TREES){ if((t.x-x)*(t.x-x)+(t.y-y)*(t.y-y) < minGap*minGap) return false; }
+    TREES.push({x,y,r:13+rnd()*12,v:rnd()<0.5?0:1});
+    return true;
+  };
+  let tries=0;
+  while(TREES.length<420 && tries<12000){ tries++;
+    addTree(60+rnd()*(W_WORLD-120), 60+rnd()*(H_WORLD-120), 52);
+  }
+  tries=0;
+  let border=0;
+  while(border<520 && tries<16000){ tries++;
+    // ring hugging the world edge (including slightly outside)
+    const edge=(rnd()*4)|0, t=rnd(), depth=-40+rnd()*150;
+    let x,y;
+    if(edge===0){ x=t*W_WORLD; y=depth; }
+    else if(edge===1){ x=t*W_WORLD; y=H_WORLD-depth; }
+    else if(edge===2){ x=depth; y=t*H_WORLD; }
+    else { x=W_WORLD-depth; y=t*H_WORLD; }
+    if(addTree(x,y,40)) border++;
+  }
+}
+function paintGround(T){
   const g=ground.getContext('2d');
-  // grass base with mottling
-  g.fillStyle="#6c6f39"; g.fillRect(0,0,W_WORLD,H_WORLD);
+  // terrain base with mottling
+  g.fillStyle=T.base; g.fillRect(0,0,W_WORLD,H_WORLD);
   for(let i=0;i<5200;i++){
     const x=rnd()*W_WORLD, y=rnd()*H_WORLD, r=5+rnd()*18;
-    g.fillStyle = rnd()<0.5 ? "rgba(92,98,46,.22)" : "rgba(126,124,68,.18)";
+    g.fillStyle = rnd()<0.5 ? T.mottle[0] : T.mottle[1];
     g.beginPath(); g.arc(x,y,r,0,TAU); g.fill();
   }
-  // fine grass speckle
+  // fine speckle
   for(let i=0;i<16000;i++){
-    g.fillStyle = rnd()<0.5 ? "rgba(80,88,40,.25)" : "rgba(140,138,80,.2)";
+    g.fillStyle = rnd()<0.5 ? T.speckle[0] : T.speckle[1];
     g.fillRect(rnd()*W_WORLD, rnd()*H_WORLD, 2.4, 2.4);
   }
-  // dry patches near track
+  // worn patches near the road
   for(let i=0;i<N;i+=6){
     const p=SAMPLES[i], a=TANG[i], off=(rnd()*2-1)*(TRACK_W*0.9+40);
-    g.fillStyle="rgba(148,132,84,.18)";
+    g.fillStyle=T.nearPatch;
     g.beginPath(); g.arc(p[0]-Math.sin(a)*off, p[1]+Math.cos(a)*off, 18+rnd()*30,0,TAU); g.fill();
   }
   const path=()=>{ g.beginPath(); g.moveTo(SAMPLES[0][0],SAMPLES[0][1]);
     for(let i=1;i<N;i++) g.lineTo(SAMPLES[i][0],SAMPLES[i][1]); g.closePath(); };
   g.lineJoin="round"; g.lineCap="round";
-  // shoulders / berm
-  path(); g.strokeStyle="#4c4428"; g.lineWidth=TRACK_W+18; g.stroke();
-  // gravel base
-  path(); g.strokeStyle="#8b7350"; g.lineWidth=TRACK_W; g.stroke();
-  path(); g.strokeStyle="#957c57"; g.lineWidth=TRACK_W-14; g.stroke();
+  // shoulders / berm, then the road surface
+  path(); g.strokeStyle=T.shoulder; g.lineWidth=TRACK_W+18; g.stroke();
+  path(); g.strokeStyle=T.road1; g.lineWidth=TRACK_W; g.stroke();
+  path(); g.strokeStyle=T.road2; g.lineWidth=TRACK_W-14; g.stroke();
   // worn racing lines (offset polylines)
   const drawOffset=(off,w,col)=>{
     g.beginPath();
@@ -394,23 +465,23 @@ const TREES=[];
       i===0?g.moveTo(x,y):g.lineTo(x,y); }
     g.strokeStyle=col; g.lineWidth=w; g.stroke();
   };
-  drawOffset(-13,9,"rgba(94,74,48,.5)");
-  drawOffset(13,9,"rgba(94,74,48,.5)");
-  drawOffset(0,10,"rgba(178,156,110,.45)");
-  // gravel speckle
+  drawOffset(-13,9,T.worn);
+  drawOffset(13,9,T.worn);
+  drawOffset(0,10,T.wornC);
+  // surface grain
   for(let i=0;i<N;i+=1){
     const p=SAMPLES[i], a=TANG[i];
     for(let s=0;s<3;s++){
       const off=(rnd()*2-1)*TRACK_W*0.46;
-      g.fillStyle = rnd()<0.5 ? "rgba(60,48,30,.35)" : "rgba(210,190,140,.30)";
+      g.fillStyle = rnd()<0.5 ? T.grain[0] : T.grain[1];
       g.fillRect(p[0]-Math.sin(a)*off, p[1]+Math.cos(a)*off, 2.2, 2.2);
     }
   }
-  // wet corners: darkened ground with a faint puddle sheen
+  // slick zones: wet dirt in the forest, sheet ice in the snow — plus a sheen
   for(let i=0;i<N;i+=2){
     const w=WETNESS[i]; if(w<0.03) continue;
     const p=SAMPLES[i];
-    g.fillStyle=`rgba(44,34,22,${(0.16*w).toFixed(3)})`;
+    g.fillStyle=`rgba(${T.zoneTint},${(T.zoneAlpha*w).toFixed(3)})`;
     g.beginPath(); g.arc(p[0],p[1],TRACK_W/2+8,0,TAU); g.fill();
   }
   for(let i=0;i<N;i+=6){
@@ -420,7 +491,7 @@ const TREES=[];
     g.save();
     g.translate(p[0]-Math.sin(a)*off,p[1]+Math.cos(a)*off);
     g.rotate(a);
-    g.fillStyle=`rgba(130,150,160,${(0.05+0.09*w*rnd()).toFixed(3)})`;
+    g.fillStyle=`rgba(${T.sheen},${(0.05+T.sheenAlpha*w*rnd()).toFixed(3)})`;
     g.beginPath(); g.ellipse(0,0,10+rnd()*14,3.5+rnd()*3,0,0,TAU); g.fill();
     g.restore();
   }
@@ -448,49 +519,26 @@ const TREES=[];
       g.fillStyle="#f2ece2"; g.fillRect(px-2.2,py-9,4.4,3);
     }
   }
-  // low stone wall along two stretches (visual, like the reference)
+  // low boulder wall along two stretches (snowbanks in the winter theme)
   const wall=(from,to,side)=>{
     for(let i=from;i<to;i+=5){
       const k=i%N, p=SAMPLES[k], a=TANG[k];
       const px=p[0]-Math.sin(a)*side*(TRACK_W/2+26), py=p[1]+Math.cos(a)*side*(TRACK_W/2+26);
       g.fillStyle="rgba(0,0,0,.28)"; g.beginPath(); g.ellipse(px+2.5,py+3.5,8,4.6,0,0,TAU); g.fill();
-      g.fillStyle=`rgb(${150+rnd()*36|0},${142+rnd()*30|0},${126+rnd()*26|0})`;
+      g.fillStyle=T.stone();
       g.beginPath(); g.ellipse(px,py,6.5+rnd()*2.5,4.6+rnd()*1.6,rnd()*TAU,0,TAU); g.fill();
     }
   };
   wall(300,430,1); wall(60,180,-1);
-  // trees: keep clear of the track; pack tighter near the world edge for a forest wall
-  const addTree=(x,y,minGap)=>{
-    const [,d]=nearestSample(x,y,null);
-    if(d < TRACK_W/2+42) return false;
-    for(const t of TREES){ if((t.x-x)*(t.x-x)+(t.y-y)*(t.y-y) < minGap*minGap) return false; }
-    TREES.push({x,y,r:13+rnd()*12,v:rnd()<0.5?0:1});
-    return true;
-  };
-  let tries=0;
-  while(TREES.length<420 && tries<12000){ tries++;
-    addTree(60+rnd()*(W_WORLD-120), 60+rnd()*(H_WORLD-120), 52);
-  }
-  tries=0;
-  let border=0;
-  while(border<520 && tries<16000){ tries++;
-    // ring hugging the world edge (including slightly outside)
-    const edge=(rnd()*4)|0, t=rnd(), depth=-40+rnd()*150;
-    let x,y;
-    if(edge===0){ x=t*W_WORLD; y=depth; }
-    else if(edge===1){ x=t*W_WORLD; y=H_WORLD-depth; }
-    else if(edge===2){ x=depth; y=t*H_WORLD; }
-    else { x=W_WORLD-depth; y=t*H_WORLD; }
-    if(addTree(x,y,40)) border++;
-  }
   // tree shadows onto the ground
   for(const t of TREES){
-    g.fillStyle="rgba(20,26,10,.34)";
+    g.fillStyle=T.treeShadow;
     g.beginPath(); g.ellipse(t.x+t.r*0.5, t.y+t.r*0.6, t.r*1.05, t.r*0.7, 0, 0, TAU); g.fill();
   }
-})();
+}
 // conifer sprites, seen from above: ragged star rings tapering to a lit tip
-function makePine(rot){
+// (the snow palette caps the inner rings in white — snow-dusted crowns)
+function makePine(palette,rot){
   const c=document.createElement('canvas'); c.width=c.height=128;
   const g=c.getContext('2d'); g.translate(64,64); g.rotate(rot);
   const star=(rad,col,spikes)=>{
@@ -502,15 +550,31 @@ function makePine(rot){
     }
     g.closePath(); g.fill();
   };
-  star(58,"#243b12",9);
-  star(46,"#31511a",9);
-  star(33,"#3f6420",8);
+  star(58,palette[0],9);
+  star(46,palette[1],9);
+  star(33,palette[2],8);
   g.translate(-3,-3);
-  star(20,"#4f7a27",7);
-  star(9,"#618f31",6);
+  star(20,palette[3],7);
+  star(9,palette[4],6);
   return c;
 }
-const PINES=[makePine(0),makePine(1.1)];
+const PINE_SETS={
+  forest:[makePine(THEMES.forest.pinePalette,0),makePine(THEMES.forest.pinePalette,1.1)],
+  snow:[makePine(THEMES.snow.pinePalette,0),makePine(THEMES.snow.pinePalette,1.1)]
+};
+let PINES=PINE_SETS[STAGES[STAGE_KEY].theme];
+generateTrees();
+paintGround(THEME);
+// apply a stage's physics + visuals (world repaint is a one-off ~50ms)
+function setStage(key){
+  STAGE_KEY=key;
+  try{ localStorage.setItem('prr-stage',key); }catch(e){}
+  const st=STAGES[key];
+  SURF=SURFACES[st.surface];
+  THEME=THEMES[st.theme];
+  PINES=PINE_SETS[st.theme];
+  paintGround(THEME);
+}
 
 // ---------- skid layer ----------
 const skid=document.createElement('canvas');
@@ -540,7 +604,8 @@ const mudFx={
     const x=Math.random()*VW, y=Math.random()*VH;
     const base=4+Math.random()*Math.random()*24;
     const t=30+Math.random()*30|0;
-    mudCtx.fillStyle=`rgba(${38+t*0.6|0},${26+t*0.4|0},${14+t*0.2|0},${(0.4+Math.random()*0.35).toFixed(2)})`;
+    const [sr,sg,sb]=THEME.splat(t);
+    mudCtx.fillStyle=`rgba(${sr},${sg},${sb},${(0.4+Math.random()*0.35).toFixed(2)})`;
     const lobes=3+(Math.random()*3|0);
     for(let i=0;i<lobes;i++){
       const a=Math.random()*TAU, dd=Math.random()*base*0.7;
@@ -718,7 +783,7 @@ const SURFACES={
     aiSkills:[0.99,0.958,0.928,0.9,0.872]
   }
 };
-let SURF=SURFACES.gravel;
+let SURF=SURFACES[STAGES[STAGE_KEY].surface];
 const P={
   accel:600, revAccel:260, brakeF:980,
   dragK:0.0019, roll:36,
@@ -798,7 +863,7 @@ function stepCar(c,dt){
     if(c.slip>85 || (c.hb&&Math.abs(vf)>60)){
       const bx=c.x-Math.cos(c.ang)*14, by=c.y-Math.sin(c.ang)*14;
       const nx=-Math.sin(c.ang)*7.5, ny=Math.cos(c.ang)*7.5;
-      skidCtx.strokeStyle=wet>0.3?"rgba(34,25,15,.3)":"rgba(52,40,26,.22)"; skidCtx.lineWidth=3.5;
+      skidCtx.strokeStyle=wet>0.3?THEME.skidZone:THEME.skid; skidCtx.lineWidth=3.5;
       skidCtx.beginPath(); skidCtx.moveTo(bx+nx,by+ny); skidCtx.lineTo(bx+nx-c.vx*dt*1.4,by+ny-c.vy*dt*1.4); skidCtx.stroke();
       skidCtx.beginPath(); skidCtx.moveTo(bx-nx,by-ny); skidCtx.lineTo(bx-nx-c.vx*dt*1.4,by-ny-c.vy*dt*1.4); skidCtx.stroke();
     }
@@ -809,7 +874,7 @@ function stepCar(c,dt){
         y:c.y-Math.sin(c.ang)*16+(Math.random()*10-5),
         vx:(Math.random()*40-20)-c.vx*0.06, vy:(Math.random()*40-20)-c.vy*0.06,
         r:4+Math.random()*6, life:0.9, max:0.9,
-        col:c.offroad?"122,124,66": wet>0.3?"78,58,36":"148,126,88"
+        col:c.offroad?THEME.dustGrass: wet>0.3?THEME.dustZone:THEME.dustRoad
       });
     }
   }
@@ -1069,7 +1134,7 @@ function render(){
   const p=state.player;
   const scale=camScale();
   ctx.setTransform(1,0,0,1,0,0);
-  ctx.fillStyle="#66693a";
+  ctx.fillStyle=THEME.bg;
   ctx.fillRect(0,0,canvas.width,canvas.height);
   if(!p){ return; }
   ctx.setTransform(scale,0,0,scale, canvas.width/2-state.camX*scale, canvas.height/2-state.camY*scale);
@@ -1213,15 +1278,22 @@ function showResults(){
 })();
 
 // ---------- boot ----------
-function startGame(){
+function startGame(stageKey){          // no key = last raced stage (gamepad/Enter)
+  setStage(stageKey||STAGE_KEY);
   $('startScreen').classList.add('hidden');
   audio.start();
   resetRace();
 }
-$('startBtn').addEventListener('click',startGame);
+$('startBtn').addEventListener('click',()=>startGame('pine'));
+$('startSnowBtn').addEventListener('click',()=>startGame('frost'));
 $('againBtn').addEventListener('click',()=>{
   $('endScreen').classList.add('hidden');
   resetRace();
+});
+$('stageBtn').addEventListener('click',()=>{
+  $('endScreen').classList.add('hidden');
+  $('startScreen').classList.remove('hidden');
+  state.mode="menu";
 });
 
 let last=performance.now();
