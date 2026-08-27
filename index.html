@@ -156,6 +156,7 @@
         <kbd>&darr; / S</kbd><div>Brake / reverse</div>
         <kbd>&larr;&rarr; / A D</kbd><div>Steer</div>
         <kbd>SPACE</kbd><div>Handbrake &mdash; flick it for hairpins</div>
+        <kbd>V</kbd><div>Isometric / top-down view</div>
         <kbd>M</kbd><div>Engine sound on / off</div>
         <kbd>R</kbd><div>Restart race</div>
         <kbd>&#127918; STICK + RT/LT</kbd><div>Controller: steer, throttle, brake &middot; A gas &middot; X handbrake &middot; Start confirms</div>
@@ -483,6 +484,8 @@ const TREES=[];
     else { x=W_WORLD-depth; y=t*H_WORLD; }
     if(addTree(x,y,40)) border++;
   }
+  // painter's order for the iso view: back-to-front along the projected depth axis
+  TREES.sort((a,b)=>(a.x+a.y)-(b.x+b.y));
   // tree shadows onto the ground
   for(const t of TREES){
     g.fillStyle="rgba(20,26,10,.34)";
@@ -511,6 +514,28 @@ function makePine(rot){
   return c;
 }
 const PINES=[makePine(0),makePine(1.1)];
+// side-profile firs for the isometric view: stacked tiers over a trunk
+function makeIsoPine(){
+  const c=document.createElement('canvas'); c.width=64; c.height=128;
+  const g=c.getContext('2d');
+  g.fillStyle="#4a3a1e"; g.fillRect(28,106,8,16);           // trunk
+  const cx=32, cols=["#22380f","#2b4614","#345419","#3e631e","#4a7324"];
+  let yb=118, w=54;
+  for(let i=0;i<5;i++){
+    const h=30-i*2, jag=3;
+    g.fillStyle=cols[i];
+    g.beginPath();
+    g.moveTo(cx, yb-h-(i===4?8:0));
+    g.lineTo(cx+w/2, yb);
+    g.lineTo(cx+w/4, yb-jag); g.lineTo(cx+w/8, yb);          // ragged skirt
+    g.lineTo(cx-w/8, yb-jag); g.lineTo(cx-w/4, yb);
+    g.lineTo(cx-w/2, yb);
+    g.closePath(); g.fill();
+    yb-=h*0.62; w*=0.78-rnd()*0.06;
+  }
+  return c;
+}
+const ISO_PINES=[makeIsoPine(),makeIsoPine()];
 
 // ---------- skid layer ----------
 const skid=document.createElement('canvas');
@@ -566,7 +591,17 @@ const mudFx={
 window.addEventListener('resize',resize); resize();
 
 const LAPS=3;
-const state={ mode:"menu", t:0, countdown:0, cars:[], particles:[], camX:0, camY:0, finishOrder:[] };
+const state={ mode:"menu", t:0, countdown:0, cars:[], particles:[], camX:0, camY:0, finishOrder:[], iso:true };
+try{ const v=localStorage.getItem('prr-iso'); if(v!==null) state.iso = v==='1'; }catch(e){}
+// isometric projection: rotate the ground plane 45° and foreshorten it;
+// flat things (track, skids, cars) ride the plane, trees stand up as billboards
+const ISO_A=Math.PI/4, ISO_S=0.55;
+function viewHalfWorld(scale){
+  const hw=canvas.width/2/scale, hh=canvas.height/2/scale;
+  if(!state.iso) return [hw,hh];
+  const e=(hw + hh/ISO_S)/Math.SQRT2 + 40;   // rotated view's world-space bounding box
+  return [e,e];
+}
 
 function makeCar(idx, gridSlot){
   // grid: two columns just behind the start line
@@ -611,6 +646,11 @@ window.addEventListener('keydown',e=>{
   if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
   keys[e.code]=true;
   if(e.code==="KeyM") audio.toggle();
+  if(e.code==="KeyV"){
+    state.iso=!state.iso;
+    try{ localStorage.setItem('prr-iso', state.iso?'1':'0'); }catch(_){}
+    toast(state.iso?"ISOMETRIC":"TOP-DOWN",900);
+  }
   if(e.code==="KeyR" && state.mode!=="menu") resetRace();
   if(state.mode==="menu" && (e.code==="Enter"||e.code==="Space")) startGame();
 });
@@ -777,10 +817,10 @@ function stepCar(c,dt){
 
   // marks + dust
   if(state.mode==="race"||state.mode==="countdown"){
-    if(c.slip>62 || (c.hb&&Math.abs(vf)>60)){
+    if(c.slip>85 || (c.hb&&Math.abs(vf)>60)){
       const bx=c.x-Math.cos(c.ang)*14, by=c.y-Math.sin(c.ang)*14;
       const nx=-Math.sin(c.ang)*7.5, ny=Math.cos(c.ang)*7.5;
-      skidCtx.strokeStyle=wet>0.3?"rgba(34,25,15,.6)":"rgba(52,40,26,.5)"; skidCtx.lineWidth=4;
+      skidCtx.strokeStyle=wet>0.3?"rgba(34,25,15,.3)":"rgba(52,40,26,.22)"; skidCtx.lineWidth=3.5;
       skidCtx.beginPath(); skidCtx.moveTo(bx+nx,by+ny); skidCtx.lineTo(bx+nx-c.vx*dt*1.4,by+ny-c.vy*dt*1.4); skidCtx.stroke();
       skidCtx.beginPath(); skidCtx.moveTo(bx-nx,by-ny); skidCtx.lineTo(bx-nx-c.vx*dt*1.4,by-ny-c.vy*dt*1.4); skidCtx.stroke();
     }
@@ -975,8 +1015,7 @@ function update(dt){
   state.camX=lerp(state.camX,cx,k);
   state.camY=lerp(state.camY,cy,k);
   // keep the view inside the forest (render() computes the same scale)
-  const sc=camScale();
-  const hw=VW*DPR/sc/2, hh=VH*DPR/sc/2;
+  const [hw,hh]=viewHalfWorld(camScale());
   if(hw*2<W_WORLD) state.camX=clamp(state.camX,hw-40,W_WORLD-hw+40);
   if(hh*2<H_WORLD) state.camY=clamp(state.camY,hh-40,H_WORLD-hh+40);
 
@@ -1006,7 +1045,7 @@ function rankOf(car){
 function camScale(){
   const p=state.player;
   const zoom = 1.06 - clamp(Math.abs(p?.vf||0)/570,0,1)*0.16; // pull back at speed
-  return zoom*DPR* clamp(Math.min(VW,VH)/760,0.8,1.25);
+  return zoom*DPR* clamp(Math.min(VW,VH)/760,0.8,1.25) * (state.iso?1.15:1);
 }
 function render(){
   const p=state.player;
@@ -1015,11 +1054,14 @@ function render(){
   ctx.fillStyle="#66693a";
   ctx.fillRect(0,0,canvas.width,canvas.height);
   if(!p){ return; }
-  ctx.setTransform(scale,0,0,scale, canvas.width/2-state.camX*scale, canvas.height/2-state.camY*scale);
+  ctx.setTransform(1,0,0,1, canvas.width/2, canvas.height/2);
+  ctx.scale(scale,scale);
+  if(state.iso){ ctx.scale(1,ISO_S); ctx.rotate(ISO_A); }
+  ctx.translate(-state.camX,-state.camY);
 
-  // visible world rect
-  const vw=canvas.width/scale, vh=canvas.height/scale;
-  const x0=state.camX-vw/2, y0=state.camY-vh/2;
+  // visible world rect (iso: the rotated view's bounding box)
+  const [hwW,hhW]=viewHalfWorld(scale);
+  const x0=state.camX-hwW, y0=state.camY-hhW, vw=hwW*2, vh=hhW*2;
 
   ctx.drawImage(ground,0,0);
   ctx.drawImage(skid,0,0,skid.width,skid.height,0,0,W_WORLD,H_WORLD);
@@ -1053,11 +1095,20 @@ function render(){
     ctx.fillStyle=`rgba(${q.col},${(q.life/q.max)*0.4})`;
     ctx.beginPath(); ctx.arc(q.x,q.y,q.r,0,TAU); ctx.fill();
   }
-  // trees over everything
+  // trees over everything (in iso they stand up: billboard at the projected spot)
   for(const t of TREES){
     if(t.x<x0-80||t.x>x0+vw+80||t.y<y0-80||t.y>y0+vh+80) continue;
     const s=t.r*2.4;
-    ctx.drawImage(PINES[t.v],t.x-s/2,t.y-s/2,s,s);
+    if(state.iso){
+      ctx.save();
+      ctx.translate(t.x,t.y);
+      ctx.rotate(-ISO_A); ctx.scale(1,1/ISO_S);   // undo the plane projection
+      const h=s*2;
+      ctx.drawImage(ISO_PINES[t.v],-s/2,-h*0.93,s,h); // trunk base on the ground point
+      ctx.restore();
+    } else {
+      ctx.drawImage(PINES[t.v],t.x-s/2,t.y-s/2,s,s);
+    }
   }
 
   // vignette

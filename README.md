@@ -1,6 +1,7 @@
 # Pine Ridge Rally
 
-A top-down rally racing game in a single HTML file — no dependencies, no build step.
+An isometric rally racing game in a single HTML file — no dependencies, no build
+step. (Press V for classic top-down.)
 Open `index.html` in a browser and race.
 
 You drive the Audi Sport quattro S1 against five AI cars over 3 laps of a gravel
@@ -33,6 +34,7 @@ forest stage.
 | ↓ / S | Brake / reverse |
 | ← → / A D | Steer |
 | Space | Handbrake |
+| V | Isometric / top-down view (isometric is the default; the choice is remembered) |
 | M | Engine sound on/off |
 | R | Restart race |
 
