@@ -16,7 +16,12 @@ forest stage.
   your windscreen (more cars ahead, more mud) and makes steering twitchy; offset
   your line to dodge the plume. Mud clears gradually once the road is dry.
   AI cars caught in *your* plume get the same handicap for a few seconds.
-- Waypoint AI with per-driver skill, wet-aware braking, and stuck recovery
+- Real slip physics: yawing the car throws momentum sideways, so corners are
+  held drifts — full lock at speed is a 60&deg;+ powerslide you steer on the throttle
+- Waypoint AI with per-driver skill, wet-aware braking, counter-steer slide
+  management, and stuck recovery
+- Melder-style rubber banding (Game AI Pro ch. 42): distance-based with a dead
+  zone, boosting chasers' real engine and top speed — hardest while you lead P1
 - Skid marks, dust, camera lookahead with speed zoom, minimap, results table
 - WebAudio engine drone (toggle with M)
 

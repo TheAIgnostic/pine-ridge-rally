@@ -699,13 +699,24 @@ const audio={
 const P={
   accel:600, revAccel:260, brakeF:980,
   dragK:0.0019, roll:36,
-  gripGravel:3.2, gripHB:1.25, gripGrass:3.2,
+  gripGravel:4.5, gripHB:1.1, gripGrass:3.2,
   yawMax:3.05, yawSpeedRef:150,
   maxRev:-170,
   grassDragMul:2.6, grassAccelMul:0.55,
-  aiLatAcc:345
+  aiLatAcc:330
 };
 function stepCar(c,dt){
+  // steer FIRST: the nose rotates but momentum stays put in the world, so
+  // decomposing velocity against the NEW heading is what creates slip.
+  // (Rotating after the decompose silently carries momentum with the nose —
+  // that is a car on rails, however low the grip.)
+  const vfp=c.vf||0;
+  const sf = clamp(Math.abs(vfp)/P.yawSpeedRef,0,1) * (1/(1+Math.abs(vfp)/1000));
+  let yaw = c.steer * P.yawMax * sf * Math.sign(vfp||1);
+  if(c.hb) yaw*=1.4;
+  yaw *= 1 + 0.35*clamp(c.slip/120,0,1);   // a loose car rotates easier
+  c.ang += yaw*dt;
+
   const cos=Math.cos(c.ang), sin=Math.sin(c.ang);
   let vf =  c.vx*cos + c.vy*sin;
   let vl = -c.vx*sin + c.vy*cos;
@@ -718,7 +729,10 @@ function stepCar(c,dt){
   if(c.mudTimer>0) c.mudTimer=Math.max(0,c.mudTimer-dt);
 
   // drive (wet ground: less traction, much weaker brakes)
-  const accelMul = (c.offroad?P.grassAccelMul:1)*(1-0.15*wet);
+  // rubber band is physical: a boosted chaser gets real engine (rb²) and real
+  // top speed (terminal speed scales with rb), so it can close on straights too
+  const rb=c.rb||1;
+  const accelMul = (c.offroad?P.grassAccelMul:1)*(1-0.15*wet)*rb*rb;
   if(c.throttle>0) vf += P.accel*accelMul*c.throttle*dt;
   if(c.brake>0){
     if(vf>5) vf -= P.brakeF*(1-0.35*wet)*c.brake*dt;
@@ -727,21 +741,19 @@ function stepCar(c,dt){
   vf=Math.max(vf,P.maxRev);
   // drag + rolling resistance
   const dragMul = c.offroad?P.grassDragMul:1;
-  vf -= (P.dragK*vf*Math.abs(vf) + Math.sign(vf)*Math.min(Math.abs(vf),P.roll*dragMul))*dt*(c.offroad?1.6:1);
-
-  // steering
-  const sf = clamp(Math.abs(vf)/P.yawSpeedRef,0,1) * (1/(1+Math.abs(vf)/1000));
-  let yaw = c.steer * P.yawMax * sf * Math.sign(vf||1);
-  if(c.hb) yaw*=1.4;
-  c.ang += yaw*dt;
+  vf -= (P.dragK/rb*vf*Math.abs(vf) + Math.sign(vf)*Math.min(Math.abs(vf),P.roll*dragMul))*dt*(c.offroad?1.6:1);
 
   // lateral grip (this is the rally feel: gravel lets the tail walk; wet gravel barely holds)
   let grip = c.offroad?P.gripGrass:P.gripGravel*(1-0.55*wet);
   if(c.hb) grip=P.gripHB*(1-0.35*wet);
   // turning at speed sheds grip — corners are where the car dances
-  grip *= 1 - 0.45*Math.abs(c.steer)*clamp(Math.abs(vf)/320,0,1);
-  if(c.throttle>0.6 && Math.abs(c.steer)>0.4) grip*=0.82;  // power oversteer
-  if(c.brake>0 && Math.abs(vf)>120) grip*=0.72;   // pendulum: braking unsettles the car
+  grip *= 1 - 0.45*Math.abs(c.steer)*clamp(Math.abs(vf)/300,0,1);
+  if(c.throttle>0.6 && Math.abs(c.steer)>0.35) grip*=0.78;  // power oversteer
+  if(c.brake>0 && Math.abs(vf)>120) grip*=0.62;   // pendulum: braking unsettles the car
+  // a sliding car keeps sliding: sideways speed erodes what grip is left,
+  // so a provoked drift holds its angle instead of snapping straight
+  grip *= 1 - 0.35*clamp(c.slip/140,0,1);
+  grip = Math.max(grip,0.45);
   vl *= Math.exp(-grip*dt);
   c.slip=Math.abs(vl);
 
@@ -806,7 +818,7 @@ function driveAI(c,dt){
   const tp=samplePos(ti), ta=TANG[ti];
   const tx=tp[0]-Math.sin(ta)*c.aiOff, ty=tp[1]+Math.cos(ta)*c.aiOff;
   const want=Math.atan2(ty-c.y,tx-c.x);
-  c.steer=clamp(angDiff(c.ang,want)*2.6,-1,1);
+  c.steer=clamp(angDiff(c.ang,want)*2.2,-1,1);
   // target speed from curvature ahead (min over the braking window)
   let minV=Infinity, si=c.near;
   const win=clamp(Math.abs(c.vf||0)*0.7,120,420);
@@ -817,25 +829,11 @@ function driveAI(c,dt){
     minV=Math.min(minV, v + acc*0.25);
     const nx2=(si+1)%N; acc += (nx2===0? TRACK_LEN-DIST[si] : DIST[nx2]-DIST[si]); si=nx2;
   }
-  // rubber band (after Melder, Game AI Pro ch.42): continuous distance-based adjustment
-  // with a dead zone around the player and hard clamps. Trailing AI gain pace (speed
-  // AND cornering, via the target), leading AI shed a little; the catch-up push is
-  // stronger while the player holds P1 so the pack keeps the pressure on.
-  const pl=state.player;
-  let rb=1;
-  if(pl && !c.isPlayer && !pl.finished){
-    const gap=pl.progress-c.progress;          // >0: this AI is behind the player
-    const DEAD=250, RANGE=3000;
-    if(gap>DEAD){
-      const boostCap = rankOf(pl)===1 ? 0.17 : 0.10;
-      rb = 1 + Math.min((gap-DEAD)/RANGE,1)*boostCap;
-    } else if(gap<-DEAD){
-      rb = 1 - Math.min((-gap-DEAD)/RANGE,1)*0.06;
-    }
-  }
-  // slow down for wet ground, here or just ahead; mud in the windscreen costs pace too
+  // rubber band: straights get the full physical boost (c.rb, set in update());
+  // corners get half of it — a boosted chaser corners braver, not impossibly
+  const rb=c.rb||1;
   const wmax=Math.max(WETNESS[c.near],WETNESS[ti]);
-  let target=clamp(minV,120,600)*clamp(c.skill*rb,0.6,1.06)*(1-0.22*wmax);
+  let target=clamp(minV*(1+(rb-1)*0.5),120,640*rb)*c.skill*(1-0.22*wmax);
   if(c.mudTimer>0){
     target*=0.92;
     c.steer=clamp(c.steer+(Math.random()-0.5)*0.25,-1,1);
@@ -845,7 +843,7 @@ function driveAI(c,dt){
   else if(vf>target+22){ c.throttle=0; c.brake=1; }
   else { c.throttle=0.4; c.brake=0; }
   // slide management: lift, and counter-steer to pull the nose back toward travel
-  if(c.slip>85){
+  if(c.slip>70){
     c.throttle=Math.min(c.throttle,0.45); c.brake=0;
     const va=Math.atan2(c.vy,c.vx);
     if(Math.hypot(c.vx,c.vy)>120) c.steer=clamp(angDiff(c.ang,va)*1.6,-1,1);
@@ -901,6 +899,20 @@ function update(dt){
   // a mud-caked windscreen makes the wheel twitchy
   if(!p.finished && mudFx.level>0.05 && !window.AUTOPILOT)
     p.steer=clamp(p.steer+(Math.random()-0.5)*0.35*mudFx.level,-1,1);
+
+  // rubber band factors (after Melder, Game AI Pro ch.42): continuous with the
+  // distance to the player, dead zone up close so wheel-to-wheel racing is honest,
+  // clamped. Trailing AI gain real pace — much more while the player holds P1 —
+  // and AI ahead of the player shed a little.
+  const playerLeads = rankOf(p)===1;
+  for(const c of state.cars){
+    if(c.isPlayer || c.finished || p.finished || !racing){ c.rb=1; continue; }
+    const gap=p.progress-c.progress;           // >0: this AI is behind the player
+    const DEAD=200, RANGE=2000;
+    if(gap>DEAD)       c.rb = 1 + Math.min((gap-DEAD)/RANGE,1)*(playerLeads?0.25:0.14);
+    else if(gap<-DEAD) c.rb = 1 - Math.min((-gap-DEAD)/RANGE,1)*0.08;
+    else c.rb = 1;
+  }
 
   for(const c of state.cars){
     if(!c.isPlayer){
